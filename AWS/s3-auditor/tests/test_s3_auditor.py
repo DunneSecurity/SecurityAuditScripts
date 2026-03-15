@@ -204,7 +204,7 @@ def test_analyse_bucket_public():
     result = s3a.analyse_bucket(s3, "my-public-bucket")
 
     assert result["is_public"] is True
-    assert result["risk_level"] in ("HIGH", "CRITICAL")
+    assert result["risk_level"] == "CRITICAL"
     assert result["encryption_enabled"] is False
     assert result["logging_enabled"] is False
     assert result["region"] == "us-east-1"
@@ -294,6 +294,7 @@ def test_check_versioning_suspended():
     s3.get_bucket_versioning.return_value = {"Status": "Suspended"}
     versioning_enabled, status, mfa_delete = s3a.check_versioning(s3, "bucket")
     assert versioning_enabled is False
+    assert status == "Suspended"
 
 
 def test_check_versioning_none():
@@ -328,7 +329,7 @@ def test_check_lifecycle_has_rules():
     s3.get_bucket_lifecycle_configuration.return_value = {"Rules": [{"ID": "rule1"}, {"ID": "rule2"}]}
     has_rules, count = s3a.check_lifecycle(s3, "bucket")
     assert has_rules is True
-    assert count > 0
+    assert count == 2
 
 
 def test_check_lifecycle_none():
