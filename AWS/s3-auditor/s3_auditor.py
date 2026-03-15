@@ -312,15 +312,17 @@ def write_html(report, path):
         public_badge = '<span style="background:#c0392b;color:white;padding:1px 6px;border-radius:3px">PUBLIC</span>' if f["is_public"] else '<span style="background:#27ae60;color:white;padding:1px 6px;border-radius:3px">PRIVATE</span>'
         enc = f.get("encryption_algorithm") or "❌ None"
         name_escaped = html.escape(f["name"])
+        region_escaped = html.escape(str(f["region"]))
+        versioning_escaped = html.escape(str(f["versioning_status"]))
         rows += f"""
         <tr>
             <td><span style="background:{color};color:white;padding:2px 8px;border-radius:4px;font-weight:bold">{f['risk_level']}</span></td>
             <td style="font-weight:bold">{f['severity_score']}/10</td>
             <td>{name_escaped}</td>
-            <td>{f['region']}</td>
+            <td>{region_escaped}</td>
             <td>{public_badge}</td>
             <td>{enc}</td>
-            <td>{'✅' if f['versioning_status'] == 'Enabled' else '❌'} {f['versioning_status']}</td>
+            <td>{'✅' if f['versioning_status'] == 'Enabled' else '❌'} {versioning_escaped}</td>
             <td>{'✅' if f['logging_enabled'] else '❌'}</td>
             <td style="font-size:0.8em">{flags_html}</td>
         </tr>"""

@@ -282,6 +282,7 @@ def write_html(report, path):
         group_id_escaped = html.escape(f["group_id"])
         group_name_escaped = html.escape(f["group_name"])
         vpc_id_escaped = html.escape(f["vpc_id"])
+        region_escaped = html.escape(str(f["region"]))
         rows += f"""
         <tr>
             <td><span style="background:{color};color:white;padding:2px 8px;border-radius:4px;font-weight:bold">{f['risk_level']}</span></td>
@@ -289,7 +290,7 @@ def write_html(report, path):
             <td><code>{group_id_escaped}</code></td>
             <td>{group_name_escaped}</td>
             <td>{vpc_id_escaped}</td>
-            <td>{f['region']}</td>
+            <td>{region_escaped}</td>
             <td>{'⚠️ Default' if f['is_default'] else '—'}</td>
             <td>{'✅' if f['is_attached'] else '❌ Unused'}</td>
             <td>{'❌ YES' if f['all_traffic_open'] else ('⚠️ SSH' if f['open_ssh'] else ('⚠️ RDP' if f['open_rdp'] else '✅'))}</td>

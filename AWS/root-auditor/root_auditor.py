@@ -400,6 +400,8 @@ def write_html(report, path):
         for k, v in contacts.items()
     )
     account_id_escaped = html.escape(str(f["account_id"]))
+    last_login_escaped = html.escape(str(f["root_last_console_login"])) if f["root_last_console_login"] else "Never / Unknown"
+    org_id_escaped = html.escape(str(f["org_id"])) if f["org_id"] else ""
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -443,8 +445,8 @@ def write_html(report, path):
     <div class="metric"><span class="label">Root MFA</span><span class="value">{'✅ Enabled' if f['root_mfa_enabled'] else '❌ NOT ENABLED'}</span></div>
     <div class="metric"><span class="label">Root Access Keys</span><span class="value">{'❌ ' + str(f['root_access_key_count']) + ' key(s) exist' if f['root_access_keys_present'] else '✅ None'}</span></div>
     <div class="metric"><span class="label">Root Used Recently</span><span class="value">{'⚠️ Yes' if f['root_used_recently'] else '✅ No'}</span></div>
-    <div class="metric"><span class="label">Last Login</span><span class="value">{f['root_last_console_login'] or 'Never / Unknown'}</span></div>
-    <div class="metric"><span class="label">Org Management Account</span><span class="value">{'Yes — ' + (f['org_id'] or '') if f['is_org_management_account'] else 'No'}</span></div>
+    <div class="metric"><span class="label">Last Login</span><span class="value">{last_login_escaped}</span></div>
+    <div class="metric"><span class="label">Org Management Account</span><span class="value">{'Yes — ' + org_id_escaped if f['is_org_management_account'] else 'No'}</span></div>
     <div class="metric"><span class="label">Support Plan</span><span class="value">{f['support_plan']}</span></div>
   </div>
   <div class="card">
