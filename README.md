@@ -13,26 +13,21 @@ A collection of security auditing scripts for AWS and other cloud platforms. Bui
 ```
 SecurityAuditScripts/
 ├── README.md
-└── aws/
+├── AWS/
+│   ├── README.md
+│   ├── iam-privilege-mapper/       # IAM users, roles, privilege escalation
+│   ├── s3-auditor/                 # S3 bucket public access, encryption, versioning
+│   ├── cloudtrail-auditor/         # CloudTrail coverage and logging gaps
+│   ├── sg-auditor/                 # Security group open ports and ingress rules
+│   └── root-auditor/               # Root account MFA, access keys, password policy
+└── Azure/
     ├── README.md
-    ├── iam-privilege-mapper/
-    │   ├── iam_mapper_v2.py
-    │   └── README.md
-    ├── s3-auditor/
-    │   ├── s3_auditor.py
-    │   └── README.md
-    ├── cloudtrail-auditor/
-    │   ├── cloudtrail_auditor.py
-    │   └── README.md
-    ├── security-group-auditor/
-    │   ├── sg_auditor.py
-    │   └── README.md
-    └── root-account-auditor/
-        ├── root_auditor.py
-        └── README.md
+    ├── entra-auditor/              # Entra ID MFA, guest roles, app credentials, privesc
+    ├── storage-auditor/            # Storage account public access, encryption, soft delete
+    ├── activitylog-auditor/        # Activity Log diagnostic settings and alerting
+    ├── nsg-auditor/                # NSG open ports, orphaned groups
+    └── subscription-auditor/       # Defender for Cloud, PIM, Global Admin hygiene
 ```
-
-> More scripts covering additional AWS services and other cloud platforms coming soon.
 
 ---
 
@@ -42,24 +37,33 @@ SecurityAuditScripts/
 
 | Script | Description | Output |
 |--------|-------------|--------|
-| [IAM Privilege Mapper](./aws/iam-privilege-mapper/) | Maps IAM users, roles, and groups. Identifies high-risk permissions, privilege escalation paths, stale credentials, and MFA gaps. | JSON, CSV, HTML |
-| [S3 Bucket Auditor](./aws/s3-auditor/) | Audits all S3 buckets for public access, missing encryption, versioning, logging, and lifecycle policies. | JSON, CSV, HTML |
-| [CloudTrail Auditor](./aws/cloudtrail-auditor/) | Checks CloudTrail coverage across all regions for logging gaps, missing KMS encryption, and CloudWatch integration. | JSON, CSV, HTML |
-| [Security Group Auditor](./aws/security-group-auditor/) | Scans all security groups across all regions for dangerous open ports, unrestricted ingress, and unused groups. | JSON, CSV, HTML |
-| [Root Account Auditor](./aws/root-account-auditor/) | Audits root account security posture including MFA, access keys, password policy, and alternate contacts. | JSON, CSV, HTML |
+| [IAM Privilege Mapper](./AWS/iam-privilege-mapper/) | Maps IAM users, roles, and groups. Identifies high-risk permissions, privilege escalation paths, stale credentials, and MFA gaps. | JSON, CSV, HTML |
+| [S3 Bucket Auditor](./AWS/s3-auditor/) | Audits all S3 buckets for public access, missing encryption, versioning, logging, and lifecycle policies. | JSON, CSV, HTML |
+| [CloudTrail Auditor](./AWS/cloudtrail-auditor/) | Checks CloudTrail coverage across all regions for logging gaps, missing KMS encryption, and CloudWatch integration. | JSON, CSV, HTML |
+| [Security Group Auditor](./AWS/sg-auditor/) | Scans all security groups across all regions for dangerous open ports, unrestricted ingress, and unused groups. | JSON, CSV, HTML |
+| [Root Account Auditor](./AWS/root-auditor/) | Audits root account security posture including MFA, access keys, password policy, and alternate contacts. | JSON, CSV, HTML |
+
+### Azure
+
+| Script | Description | Output |
+|--------|-------------|--------|
+| [Entra Auditor](./Azure/entra-auditor/) | Audits Entra ID users, guest access, app credentials, custom roles, and privilege escalation paths. | JSON, CSV, HTML |
+| [Storage Auditor](./Azure/storage-auditor/) | Audits Storage Accounts for public access, shared key auth, encryption, soft delete, versioning, and logging. | JSON, CSV, HTML |
+| [Activity Log Auditor](./Azure/activitylog-auditor/) | Checks Activity Log diagnostic settings for coverage, retention, missing categories, and alerting gaps. | JSON, CSV, HTML |
+| [NSG Auditor](./Azure/nsg-auditor/) | Scans Network Security Groups for dangerous open ports, internet-exposed rules, and orphaned groups. | JSON, CSV, HTML |
+| [Subscription Auditor](./Azure/subscription-auditor/) | Audits subscription posture including Defender for Cloud, permanent privileged roles, Global Admin hygiene, and budget alerts. | JSON, CSV, HTML |
 
 ---
 
 ## ⚙️ General Requirements
 
+### AWS
+
 - Python 3.7+
 - `boto3` (`pip install boto3`)
-- AWS credentials configured (see below)
+- AWS credentials configured
 
-### AWS Authentication
-
-All AWS scripts use `boto3` and will pick up credentials in the following order:
-
+Authentication order:
 1. **AWS CloudShell** — credentials are pre-configured, just upload and run
 2. **Environment variables:**
    ```bash
@@ -70,20 +74,40 @@ All AWS scripts use `boto3` and will pick up credentials in the following order:
 3. **AWS CLI profile** (`aws configure`) — most scripts support `--profile` flag
 4. **IAM role** — if running on EC2/Lambda, the instance/execution role is used automatically
 
+### Azure
+
+- PowerShell 7+
+- Az PowerShell module + Microsoft Graph SDK (see each script's README for exact modules)
+- Active Az context (`Connect-AzAccount` already run)
+
+```powershell
+# Install core Az modules
+Install-Module Az.Accounts, Az.Resources, Az.Network, Az.Storage, Az.Monitor, Az.Security -Scope CurrentUser
+
+# Install Graph modules (required by entra-auditor and subscription-auditor)
+Install-Module Microsoft.Graph.Authentication, Microsoft.Graph.Users, Microsoft.Graph.Identity.Governance -Scope CurrentUser
+
+Connect-AzAccount
+```
+
 ---
 
 ## 🚀 Quick Start
 
+### AWS
 ```bash
-# Clone the repo
 git clone https://github.com/Decdd19/SecurityAuditScripts.git
 cd SecurityAuditScripts
-
-# Install dependencies
 pip install boto3
+python3 AWS/iam-privilege-mapper/iam_mapper_v2.py --format html --output iam_report
+```
 
-# Run a script (example)
-python3 aws/iam-privilege-mapper/iam_mapper_v2.py --format html --output iam_report
+### Azure
+```powershell
+git clone https://github.com/Decdd19/SecurityAuditScripts.git
+cd SecurityAuditScripts
+Connect-AzAccount
+.\Azure\entra-auditor\entra_auditor.ps1 -Format html
 ```
 
 ---
@@ -91,9 +115,11 @@ python3 aws/iam-privilege-mapper/iam_mapper_v2.py --format html --output iam_rep
 ## 📌 Notes
 
 - Scripts are **read-only** — they query APIs and do not make any changes to your environment
-- Designed to run in **AWS CloudShell** with zero setup, or locally with credentials configured
+- AWS scripts are designed to run in **AWS CloudShell**; Azure scripts run in **Azure CloudShell** or locally
 - Output files are written to the current working directory unless specified otherwise
-- All scripts support `--format` (json, csv, html, all) and `--profile` flags
+- All output files are created with owner-only permissions (600)
+- AWS scripts support `--format` (json, csv, html, all) and `--profile` flags
+- Azure scripts support `-Format` (json, csv, html, all, stdout) and `-AllSubscriptions` flags
 
 ---
 
