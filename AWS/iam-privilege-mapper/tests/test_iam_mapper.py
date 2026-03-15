@@ -108,6 +108,8 @@ def test_paginate_multiple_pages():
 from datetime import datetime, timezone, timedelta
 from botocore.exceptions import ClientError
 
+FIXED_NOW = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
 
 def _make_client_error(code="AccessDenied", message="Access denied"):
     """Helper to create a ClientError for mocking."""
@@ -117,7 +119,7 @@ def _make_client_error(code="AccessDenied", message="Access denied"):
 
 def test_check_access_keys_stale_key():
     """A single active key older than 90 days should produce a stale-key issue."""
-    stale_date = datetime.now(timezone.utc) - timedelta(days=100)
+    stale_date = FIXED_NOW - timedelta(days=100)
     mock_iam = MagicMock()
     mock_iam.list_access_keys.return_value = {
         "AccessKeyMetadata": [
@@ -134,19 +136,18 @@ def test_check_access_keys_stale_key():
     }
 
     # Patch NOW so age_days is computed relative to a fixed point
-    fixed_now = datetime.now(timezone.utc)
-    with patch.object(iam, "NOW", fixed_now):
+    with patch.object(iam, "NOW", FIXED_NOW):
         issues, keys = iam.check_access_keys(mock_iam, "alice")
 
     stale_issues = [i for i in issues if "days old" in i]
     assert len(stale_issues) >= 1, f"Expected stale-key issue, got: {issues}"
-    assert keys[0]["age_days"] > 90
+    assert keys[0]["age_days"] == 100
 
 
 def test_check_access_keys_unused_key():
     """An active key with last-used date >90 days ago should produce an unused-key issue."""
-    create_date = datetime.now(timezone.utc) - timedelta(days=10)
-    last_used_date = datetime.now(timezone.utc) - timedelta(days=100)
+    create_date = FIXED_NOW - timedelta(days=10)
+    last_used_date = FIXED_NOW - timedelta(days=100)
     mock_iam = MagicMock()
     mock_iam.list_access_keys.return_value = {
         "AccessKeyMetadata": [
@@ -164,18 +165,17 @@ def test_check_access_keys_unused_key():
         }
     }
 
-    fixed_now = datetime.now(timezone.utc)
-    with patch.object(iam, "NOW", fixed_now):
+    with patch.object(iam, "NOW", FIXED_NOW):
         issues, keys = iam.check_access_keys(mock_iam, "alice")
 
     unused_issues = [i for i in issues if "unused for" in i]
     assert len(unused_issues) >= 1, f"Expected unused-key issue, got: {issues}"
-    assert keys[0]["days_since_used"] > 90
+    assert keys[0]["days_since_used"] == 100
 
 
 def test_check_access_keys_multiple_active():
     """Two active keys should produce a multiple-active-keys issue."""
-    create_date = datetime.now(timezone.utc) - timedelta(days=5)
+    create_date = FIXED_NOW - timedelta(days=5)
     mock_iam = MagicMock()
     mock_iam.list_access_keys.return_value = {
         "AccessKeyMetadata": [
@@ -187,12 +187,11 @@ def test_check_access_keys_multiple_active():
         "AccessKeyLastUsed": {"ServiceName": "iam"}
     }
 
-    fixed_now = datetime.now(timezone.utc)
-    with patch.object(iam, "NOW", fixed_now):
+    with patch.object(iam, "NOW", FIXED_NOW):
         issues, keys = iam.check_access_keys(mock_iam, "alice")
 
     multi_issues = [i for i in issues if "Multiple active" in i]
-    assert len(multi_issues) >= 1, f"Expected multiple-active-keys issue, got: {issues}"
+    assert len(multi_issues) == 1, f"Expected exactly one multiple-active-keys issue, got: {issues}"
     assert len(keys) == 2
 
 
@@ -233,6 +232,23 @@ def test_check_permission_boundary_api_error():
 
     result = iam.check_permission_boundary(mock_iam, "user", "nonexistent")
     assert result is None
+
+
+def test_check_permission_boundary_role_present():
+    """When PermissionsBoundary is present on a role, boundary ARN should be returned."""
+    mock_iam = MagicMock()
+    boundary_arn = "arn:aws:iam::123456789012:policy/RoleBoundary"
+    mock_iam.get_role.return_value = {
+        "Role": {
+            "RoleName": "my-role",
+            "PermissionsBoundary": {
+                "PermissionsBoundaryArn": boundary_arn,
+            },
+        }
+    }
+
+    result = iam.check_permission_boundary(mock_iam, "role", "my-role")
+    assert result == boundary_arn
 
 
 # ── analyse_user ───────────────────────────────────────────────────────────────
@@ -297,7 +313,7 @@ def _build_mock_iam_for_user(
 
 def test_analyse_user_admin_stale_keys_no_mfa():
     """User with AdministratorAccess, stale key, and no MFA should be HIGH or CRITICAL risk."""
-    stale_date = datetime.now(timezone.utc) - timedelta(days=100)
+    stale_date = FIXED_NOW - timedelta(days=100)
     admin_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
 
     mock_iam = _build_mock_iam_for_user(
@@ -313,8 +329,7 @@ def test_analyse_user_admin_stale_keys_no_mfa():
         "Arn": "arn:aws:iam::123456789012:user/alice",
     }
 
-    fixed_now = datetime.now(timezone.utc)
-    with patch.object(iam, "NOW", fixed_now):
+    with patch.object(iam, "NOW", FIXED_NOW):
         result = iam.analyse_user(mock_iam, user, set())
 
     assert result["type"] == "user"
@@ -380,10 +395,12 @@ def test_analyse_role_cross_account_trust():
 
     assert result["cross_account_trust"] is True
     assert "arn:aws:iam::999999999999:root" in result["trust_principals"]
+    # Cross-account trust adds 1 point to score; no policies means score=1 -> LOW (threshold for MEDIUM is 2)
+    assert result["risk_level"] == "LOW"
 
 
 def test_analyse_role_with_boundary():
-    """Role with a permission boundary should have permission_boundary set and has_boundary reflected in score."""
+    """Role with a permission boundary should have permission_boundary set."""
     boundary_arn = "arn:aws:iam::123456789012:policy/RoleBoundary"
     mock_iam = MagicMock()
     mock_iam.list_attached_role_policies.return_value = {"AttachedPolicies": []}
@@ -404,6 +421,8 @@ def test_analyse_role_with_boundary():
     result = iam.analyse_role(mock_iam, role, set())
 
     assert result["permission_boundary"] == boundary_arn
+    # No policies attached, so score is 0 regardless of boundary -> LOW
+    assert result["risk_level"] == "LOW"
 
 
 # ── analyse_group ──────────────────────────────────────────────────────────────

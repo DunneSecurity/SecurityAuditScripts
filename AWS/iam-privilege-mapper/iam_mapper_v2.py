@@ -257,8 +257,9 @@ def check_access_keys(iam, username):
             issues.append(f"Key {key_id} unused for {days_since_used} days")
         if status == "Active" and last_used_date is None:
             issues.append(f"Key {key_id} has never been used")
-        if len([k for k in keys if k["Status"] == "Active"]) > 1:
-            issues.append("Multiple active access keys detected")
+
+    if len([k for k in keys if k["Status"] == "Active"]) > 1:
+        issues.append("Multiple active access keys detected")
 
     return issues, keys
 
