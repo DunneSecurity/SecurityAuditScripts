@@ -54,6 +54,7 @@ Describe 'Get-NsgFindings' {
         $rdpFinding = $findings | Where-Object { $_.Port -eq 3389 -and $_.NsgName -eq 'test-nsg' }
         $rdpFinding | Should -Not -BeNullOrEmpty
         $rdpFinding.Severity | Should -BeIn @('CRITICAL', 'HIGH')
+        $rdpFinding.Recommendation | Should -Match 'Azure Portal'
     }
 
     It 'does not flag HTTPS restricted to specific IP' {
@@ -86,6 +87,7 @@ Describe 'Get-NsgFindings' {
         $finding = $findings | Where-Object { $_.NsgName -eq 'nodeny-nsg' -and $_.FindingType -eq 'NoDenyRules' }
         $finding | Should -Not -BeNullOrEmpty
         $finding.Severity | Should -Be 'MEDIUM'
+        $finding.Recommendation | Should -Match 'Azure Portal'
     }
 
     It 'flags orphaned NSG with no subnet or NIC association' {
@@ -103,6 +105,7 @@ Describe 'Get-NsgFindings' {
         $findings = $result.Findings
         $orphanFinding = $findings | Where-Object { $_.NsgName -eq 'orphan-nsg' -and $_.FindingType -eq 'Orphaned' }
         $orphanFinding | Should -Not -BeNullOrEmpty
+        $orphanFinding.Recommendation | Should -Match 'Azure Portal'
     }
 
     It 'flags all dangerous ports when rule uses wildcard destination port' {
@@ -130,6 +133,7 @@ Describe 'Get-NsgFindings' {
         $rdp = $findings | Where-Object { $_.Port -eq 3389 }
         $rdp | Should -Not -BeNullOrEmpty
         $rdp.Severity | Should -BeIn @('CRITICAL', 'HIGH')
+        $rdp.Recommendation | Should -Match 'Azure Portal'
     }
 
     It 'returns empty findings and NsgCount 0 for subscription with no NSGs' {

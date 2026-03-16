@@ -109,7 +109,7 @@ function Get-NsgFindings {
                 RuleName       = $null
                 Score          = 2
                 Severity       = 'LOW'
-                Recommendation = "NSG '$($nsg.Name)' is not associated with any subnet or NIC. Remove if unused."
+                Recommendation = "Associate NSG with subnet or NIC: Azure Portal → Network security groups → $($nsg.Name) → Subnets (or Network interfaces) → Associate → select resource → OK"
             } + $base))
         }
 
@@ -152,7 +152,7 @@ function Get-NsgFindings {
                         RuleName       = $rule.Name
                         Score          = $portInfo.Score
                         Severity       = (Get-SeverityLabel $portInfo.Score)
-                        Recommendation = "Restrict $($portInfo.Service) (port $dangerousPort) to known IP ranges or remove rule '$($rule.Name)'."
+                        Recommendation = "Restrict $($portInfo.Service) (port $dangerousPort) to known source IPs or use Azure Bastion: Azure Portal → Network security groups → $($nsg.Name) → Inbound security rules → select rule → Source → IP Addresses → enter allowed CIDRs → Save. Consider Azure Bastion for SSH/RDP instead."
                     } + $base))
                 }
             }
@@ -170,7 +170,7 @@ function Get-NsgFindings {
                 RuleName       = $null
                 Score          = 3
                 Severity       = 'MEDIUM'
-                Recommendation = "NSG '$($nsg.Name)' has no explicit deny rules. Relies entirely on built-in DenyAllInbound (priority 65500). Add explicit deny rules for high-risk ports."
+                Recommendation = "Add explicit deny rules: Azure Portal → Network security groups → $($nsg.Name) → Inbound security rules → Add → Priority 4096 → Source: Any → Destination: Any → Action: Deny → Save"
             } + $base))
         }
     }
@@ -201,7 +201,7 @@ function ConvertTo-HtmlReport {
             <td>$port</td>
             <td>$rule</td>
             <td><span style='background:$colour;color:#fff;padding:2px 6px;border-radius:3px;font-weight:bold'>$($f.Severity)</span></td>
-            <td>$([System.Web.HttpUtility]::HtmlEncode($f.Recommendation))</td>
+            <td><div class='rem-text'>&#8627; $([System.Web.HttpUtility]::HtmlEncode($f.Recommendation))</div></td>
         </tr>"
     }
 
@@ -217,6 +217,7 @@ function ConvertTo-HtmlReport {
   th{background:#343a40;color:#fff;padding:10px;text-align:left}
   td{padding:8px 10px;border-bottom:1px solid #dee2e6}tr:hover{background:#f1f3f5}
   .meta{color:#666;font-size:.85em;margin-bottom:16px}
+  .rem-text { display: block; font-size: 0.78em; color: #555; padding-left: 12px; font-style: italic; margin-top: 4px; }
 </style></head><body>
 <h1>NSG Audit Report</h1>
 <p class='meta'>Tenant: $TenantId &nbsp;|&nbsp; Generated: $ScannedAt</p>
