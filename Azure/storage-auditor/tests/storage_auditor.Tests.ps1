@@ -35,6 +35,7 @@ Describe 'Get-StorageFindings' {
         $finding = $result.Findings | Where-Object { $_.AccountName -eq 'publicstore' -and $_.FindingType -eq 'PublicBlobAccess' }
         $finding | Should -Not -BeNullOrEmpty
         $finding.Severity | Should -Be 'CRITICAL'
+        $finding.Recommendation | Should -Match 'Azure Portal'
     }
 
     It 'flags storage account with shared key access enabled' {
@@ -61,6 +62,7 @@ Describe 'Get-StorageFindings' {
         $finding = $result.Findings | Where-Object { $_.AccountName -eq 'sharedkeystore' -and $_.FindingType -eq 'SharedKeyAccess' }
         $finding | Should -Not -BeNullOrEmpty
         $finding.Severity | Should -Be 'HIGH'
+        $finding.Recommendation | Should -Match 'Azure Portal'
     }
 
     It 'flags storage account without customer-managed keys' {
@@ -87,6 +89,7 @@ Describe 'Get-StorageFindings' {
         $finding = $result.Findings | Where-Object { $_.AccountName -eq 'nokmstore' -and $_.FindingType -eq 'NoCustomerManagedKey' }
         $finding | Should -Not -BeNullOrEmpty
         $finding.Severity | Should -Be 'MEDIUM'
+        $finding.Recommendation | Should -Match 'Azure Portal'
     }
 
     It 'flags storage account with soft delete disabled' {
@@ -113,6 +116,7 @@ Describe 'Get-StorageFindings' {
         $finding = $result.Findings | Where-Object { $_.AccountName -eq 'nosoftdelete' -and $_.FindingType -eq 'SoftDeleteDisabled' }
         $finding | Should -Not -BeNullOrEmpty
         $finding.Severity | Should -Be 'MEDIUM'
+        $finding.Recommendation | Should -Match 'Azure Portal'
     }
 
     It 'does not flag a well-configured storage account' {
@@ -172,6 +176,7 @@ Describe 'Get-StorageFindings' {
         $finding = $result.Findings | Where-Object { $_.AccountName -eq 'nodiagstore' -and $_.FindingType -eq 'NoDiagnosticLogging' }
         $finding | Should -Not -BeNullOrEmpty
         $finding.Severity | Should -Be 'MEDIUM'
+        $finding.Recommendation | Should -Match 'Azure Portal'
     }
 
     It 'flags storage account with versioning disabled' {
@@ -203,6 +208,7 @@ Describe 'Get-StorageFindings' {
         $finding = $result.Findings | Where-Object { $_.AccountName -eq 'noversionstore' -and $_.FindingType -eq 'VersioningDisabled' }
         $finding | Should -Not -BeNullOrEmpty
         $finding.Severity | Should -Be 'MEDIUM'
+        $finding.Recommendation | Should -Match 'Azure Portal'
     }
 
     It 'flags storage account with no SAS expiry policy' {
@@ -234,6 +240,7 @@ Describe 'Get-StorageFindings' {
         $finding = $result.Findings | Where-Object { $_.AccountName -eq 'nosaspolicystore' -and $_.FindingType -eq 'NoSasExpiryPolicy' }
         $finding | Should -Not -BeNullOrEmpty
         $finding.Severity | Should -Be 'LOW'
+        $finding.Recommendation | Should -Match 'Azure Portal'
     }
 
     It 'returns empty findings and AccountCount 0 for subscription with no storage accounts' {

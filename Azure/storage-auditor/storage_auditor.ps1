@@ -82,7 +82,7 @@ function Get-StorageFindings {
                 FindingType    = 'PublicBlobAccess'
                 Score          = 9
                 Severity       = 'CRITICAL'
-                Recommendation = "Disable public blob access on storage account '$($account.StorageAccountName)' to prevent anonymous data exposure."
+                Recommendation = "Disable public blob access: Azure Portal → Storage accounts → $($account.StorageAccountName) → Configuration → Allow Blob public access → Disabled → Save"
             } + $base))
         }
 
@@ -92,7 +92,7 @@ function Get-StorageFindings {
                 FindingType    = 'SharedKeyAccess'
                 Score          = 7
                 Severity       = 'HIGH'
-                Recommendation = "Disable shared key access on '$($account.StorageAccountName)' and use Azure AD authentication instead."
+                Recommendation = "Disable shared key access (enforce Azure AD auth): Azure Portal → Storage accounts → $($account.StorageAccountName) → Configuration → Allow storage account key access → Disabled → Save"
             } + $base))
         }
 
@@ -102,7 +102,7 @@ function Get-StorageFindings {
                 FindingType    = 'NoCustomerManagedKey'
                 Score          = 4
                 Severity       = 'MEDIUM'
-                Recommendation = "Configure customer-managed keys (CMK) via Azure Key Vault for storage account '$($account.StorageAccountName)'."
+                Recommendation = "Enable CMK encryption: Azure Portal → Storage accounts → $($account.StorageAccountName) → Encryption → Encryption type → Customer-managed keys → select Key Vault and key → Save"
             } + $base))
         }
 
@@ -112,7 +112,7 @@ function Get-StorageFindings {
                 FindingType    = 'NoInfrastructureEncryption'
                 Score          = 2
                 Severity       = 'LOW'
-                Recommendation = "Enable infrastructure encryption on '$($account.StorageAccountName)' for double encryption at rest."
+                Recommendation = "Enable infrastructure encryption (double encryption): Azure Portal → Storage accounts → $($account.StorageAccountName) → Encryption → Enable infrastructure encryption → Save (requires recreation for existing accounts)"
             } + $base))
         }
 
@@ -130,7 +130,7 @@ function Get-StorageFindings {
                 FindingType    = 'SoftDeleteDisabled'
                 Score          = 4
                 Severity       = (Get-SeverityLabel 4)
-                Recommendation = "Enable blob soft delete on '$($account.StorageAccountName)' to allow recovery from accidental deletions."
+                Recommendation = "Enable blob soft delete: Azure Portal → Storage accounts → $($account.StorageAccountName) → Data protection → Enable soft delete for blobs → set retention (minimum 7 days) → Save"
             } + $base))
         }
 
@@ -141,7 +141,7 @@ function Get-StorageFindings {
                 FindingType    = 'VersioningDisabled'
                 Score          = 3
                 Severity       = (Get-SeverityLabel 3)
-                Recommendation = "Enable blob versioning on '$($account.StorageAccountName)' to protect against accidental overwrites."
+                Recommendation = "Enable blob versioning: Azure Portal → Storage accounts → $($account.StorageAccountName) → Data protection → Enable versioning for blobs → Save"
             } + $base))
         }
 
@@ -153,7 +153,7 @@ function Get-StorageFindings {
                 FindingType    = 'NoSasExpiryPolicy'
                 Score          = 2
                 Severity       = (Get-SeverityLabel 2)
-                Recommendation = "Configure a SAS expiry policy on '$($account.StorageAccountName)' to enforce maximum SAS token lifetime."
+                Recommendation = "Configure SAS expiry policy: Azure Portal → Storage accounts → $($account.StorageAccountName) → Configuration → SAS expiration period → set maximum allowed duration → Save"
             } + $base))
         }
 
@@ -167,7 +167,7 @@ function Get-StorageFindings {
                         FindingType    = 'NoDiagnosticLogging'
                         Score          = 3
                         Severity       = (Get-SeverityLabel 3)
-                        Recommendation = "Storage account '$($account.StorageAccountName)' has no diagnostic settings. Enable logging to capture read/write/delete operations."
+                        Recommendation = "Enable diagnostic logging: Azure Portal → Storage accounts → $($account.StorageAccountName) → Diagnostic settings → Add diagnostic setting → select StorageRead/Write/Delete → send to Log Analytics workspace → Save"
                     } + $base))
                 }
             } catch {
@@ -199,7 +199,7 @@ function ConvertTo-HtmlReport {
             <td>$([System.Web.HttpUtility]::HtmlEncode($f.Subscription))</td>
             <td>$([System.Web.HttpUtility]::HtmlEncode($f.FindingType))</td>
             <td><span style='background:$colour;color:#fff;padding:2px 6px;border-radius:3px;font-weight:bold'>$($f.Severity)</span></td>
-            <td>$([System.Web.HttpUtility]::HtmlEncode($f.Recommendation))</td>
+            <td><div class='rem-text'>&#8627; $([System.Web.HttpUtility]::HtmlEncode($f.Recommendation))</div></td>
         </tr>"
     }
 
@@ -215,6 +215,7 @@ function ConvertTo-HtmlReport {
   th{background:#343a40;color:#fff;padding:10px;text-align:left}
   td{padding:8px 10px;border-bottom:1px solid #dee2e6}tr:hover{background:#f1f3f5}
   .meta{color:#666;font-size:.85em;margin-bottom:16px}
+  .rem-text { display: block; font-size: 0.78em; color: #555; padding-left: 12px; font-style: italic; margin-top: 4px; }
 </style></head><body>
 <h1>Storage Account Audit Report</h1>
 <p class='meta'>Tenant: $TenantId &nbsp;|&nbsp; Generated: $ScannedAt</p>
