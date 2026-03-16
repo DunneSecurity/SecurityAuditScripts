@@ -30,6 +30,7 @@ Describe 'Get-SubscriptionFindings' {
         $finding = $result.Findings | Where-Object { $_.FindingType -eq 'DefenderNotEnabled' }
         $finding | Should -Not -BeNullOrEmpty
         $finding.Severity | Should -Be 'HIGH'
+        $finding.Recommendation | Should -Match 'Azure Portal'
     }
 
     It 'flags permanent human Owner assignment with no PIM as CRITICAL' {
@@ -56,6 +57,7 @@ Describe 'Get-SubscriptionFindings' {
         $finding = $result.Findings | Where-Object { $_.FindingType -eq 'PermanentOwnerAssignment' }
         $finding | Should -Not -BeNullOrEmpty
         $finding.Severity | Should -Be 'CRITICAL'
+        $finding.Recommendation | Should -Match 'Azure Portal'
     }
 
     It 'does not flag Owner assignment when PIM eligible assignment exists' {
@@ -102,6 +104,7 @@ Describe 'Get-SubscriptionFindings' {
         $finding = $result.Findings | Where-Object { $_.FindingType -eq 'NoResourceLocks' }
         $finding | Should -Not -BeNullOrEmpty
         $finding.Severity | Should -Be 'MEDIUM'
+        $finding.Recommendation | Should -Match 'Azure Portal'
     }
 
     It 'flags subscription with no budget alerts as LOW' {
@@ -120,6 +123,7 @@ Describe 'Get-SubscriptionFindings' {
         $finding = $result.Findings | Where-Object { $_.FindingType -eq 'NoBudgetAlerts' }
         $finding | Should -Not -BeNullOrEmpty
         $finding.Severity | Should -Be 'LOW'
+        $finding.Recommendation | Should -Match 'Azure Portal'
     }
 
     It 'flags more than 5 Global Administrators as MEDIUM' {
@@ -176,6 +180,7 @@ Describe 'Get-SubscriptionFindings' {
         $finding = $result.Findings | Where-Object { $_.FindingType -eq 'GlobalAdminNoMfa' }
         $finding | Should -Not -BeNullOrEmpty
         $finding.Severity | Should -Be 'CRITICAL'
+        $finding.Recommendation | Should -Match 'Azure Portal'
     }
 }
 

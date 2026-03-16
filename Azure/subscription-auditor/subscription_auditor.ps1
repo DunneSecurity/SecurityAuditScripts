@@ -82,7 +82,7 @@ function Get-SubscriptionFindings {
                 FindingType    = 'DefenderNotEnabled'
                 Detail         = "Defender plan '$($pricing.Name)' is at Free tier"
                 Score          = 7; Severity = (Get-SeverityLabel 7)
-                Recommendation = "Enable Microsoft Defender for Cloud Standard tier for '$($pricing.Name)'."
+                Recommendation = "Enable Defender for Cloud: Azure Portal → Microsoft Defender for Cloud → Environment settings → [subscription] → Defender plans → Enable required plans (at minimum: Servers, Storage, Key Vault) → Save"
             } + $base))
         }
     }
@@ -103,7 +103,7 @@ function Get-SubscriptionFindings {
                 FindingType    = 'PermanentOwnerAssignment'
                 Detail         = "$($assignment.RoleDefinitionName) permanently assigned to '$($assignment.SignInName)' — no PIM eligible assignment found"
                 Score          = 8; Severity = (Get-SeverityLabel 8)
-                Recommendation = "Use Privileged Identity Management (PIM) for just-in-time Owner/Contributor access instead of permanent assignments."
+                Recommendation = "Review Owner assignments: Azure Portal → Subscriptions → [subscription] → Access control (IAM) → Role assignments → filter by Owner → remove unnecessary assignments; use Contributor + specific data roles instead"
             } + $base))
         }
     }
@@ -141,7 +141,7 @@ function Get-SubscriptionFindings {
                     FindingType    = 'GlobalAdminNoMfa'
                     Detail         = "Global Admin '$displayName' ($upn) has no MFA method registered"
                     Score          = 9; Severity = (Get-SeverityLabel 9)
-                    Recommendation = "Require MFA for all Global Administrators immediately."
+                    Recommendation = "Add security contacts: Azure Portal → Microsoft Defender for Cloud → Environment settings → [subscription] → Email notifications → add email addresses and phone → Save"
                 } + $base))
             }
         } catch {
@@ -158,7 +158,7 @@ function Get-SubscriptionFindings {
             FindingType    = 'NoResourceLocks'
             Detail         = "Subscription '$($Subscription.Name)' has no resource locks configured"
             Score          = 4; Severity = (Get-SeverityLabel 4)
-            Recommendation = "Apply CanNotDelete or ReadOnly locks to critical resources or resource groups to prevent accidental deletion."
+            Recommendation = "Apply resource locks to critical resources: Azure Portal → [resource group] → Locks → Add → Lock type: CanNotDelete or ReadOnly → Save"
         } + $base))
     }
 
@@ -171,7 +171,7 @@ function Get-SubscriptionFindings {
             FindingType    = 'NoBudgetAlerts'
             Detail         = "Subscription '$($Subscription.Name)' has no budget alerts configured"
             Score          = 2; Severity = (Get-SeverityLabel 2)
-            Recommendation = "Configure at least one budget with alert thresholds to monitor and control cloud spending."
+            Recommendation = "Create a budget alert: Azure Portal → Cost Management + Billing → Budgets → Add → set amount and threshold alerts → Create"
         } + $base))
     }
 
@@ -198,7 +198,7 @@ function ConvertTo-HtmlReport {
             <td>$([System.Web.HttpUtility]::HtmlEncode($f.FindingType))</td>
             <td>$([System.Web.HttpUtility]::HtmlEncode($f.Detail))</td>
             <td><span style='background:$colour;color:#fff;padding:2px 6px;border-radius:3px;font-weight:bold'>$($f.Severity)</span></td>
-            <td>$([System.Web.HttpUtility]::HtmlEncode($f.Recommendation))</td>
+            <td><div class='rem-text'>&#8627; $([System.Web.HttpUtility]::HtmlEncode($f.Recommendation))</div></td>
         </tr>"
     }
 
@@ -214,6 +214,7 @@ function ConvertTo-HtmlReport {
   th{background:#343a40;color:#fff;padding:10px;text-align:left}
   td{padding:8px 10px;border-bottom:1px solid #dee2e6}tr:hover{background:#f1f3f5}
   .meta{color:#666;font-size:.85em;margin-bottom:16px}
+  .rem-text { display: block; font-size: 0.78em; color: #555; padding-left: 12px; font-style: italic; margin-top: 4px; }
 </style></head><body>
 <h1>Subscription &amp; Tenant Posture Audit Report</h1>
 <p class='meta'>Tenant: $TenantId &nbsp;|&nbsp; Generated: $ScannedAt</p>
