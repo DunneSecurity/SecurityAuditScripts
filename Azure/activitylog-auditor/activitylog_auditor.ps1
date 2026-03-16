@@ -103,7 +103,7 @@ function Get-ActivityLogFindings {
                     Detail         = "Diagnostic setting '$($diag.Name)' has no destination configured (no workspace, storage account, or event hub)"
                     Score          = 9
                     Severity       = 'CRITICAL'
-                    Recommendation = 'Configure at least one destination (Log Analytics workspace, storage account, or Event Hub) for the diagnostic setting.'
+                    Recommendation = 'Configure a destination for the diagnostic setting: Azure Portal → Monitor → Activity log → Export Activity Logs → select the setting → Edit → add Log Analytics workspace, storage account, or Event Hub → Save'
                 } + $base))
                 continue
             }
@@ -124,7 +124,7 @@ function Get-ActivityLogFindings {
                         Detail         = "Category '$cat' not captured"
                         Score          = 7
                         Severity       = 'HIGH'
-                        Recommendation = "Enable the '$cat' category in diagnostic setting '$($diag.Name)' to ensure full Activity Log coverage."
+                        Recommendation = "Enable the '$cat' category: Azure Portal → Monitor → Activity log → Export Activity Logs → select '$($diag.Name)' → Edit → enable '$cat' log category → Save"
                     } + $base))
                 }
             }
@@ -187,7 +187,7 @@ function Get-ActivityLogFindings {
                     Detail         = "Event Hub destination — retention cannot be audited"
                     Score          = 1
                     Severity       = 'LOW'
-                    Recommendation = "Verify that downstream Event Hub consumers or connected storage enforce the required retention period (minimum 90 days)."
+                    Recommendation = "Verify Event Hub retention: Azure Portal → Event Hubs → [namespace] → [hub] → Properties → Message Retention → set to 7 days minimum; also ensure downstream consumers archive to long-term storage (minimum 90 days)"
                 } + $base))
             }
         }
