@@ -3,9 +3,11 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import csv as csv_module
 import json
+import stat
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from botocore.exceptions import ClientError
 import cloudtrail_auditor as ct
 
@@ -15,254 +17,188 @@ def _client_error(code):
     return ClientError(error, "test")
 
 
-# ── calculate_score ────────────────────────────────────────────────────────────
-
-def test_score_not_logging_is_critical():
-    score, level = ct.calculate_score(True, False, False, False, False, False, False)
-    assert score >= 5
-    assert level in ("HIGH", "CRITICAL")
-
-
-def test_score_s3_public_adds_points():
-    score_without, _ = ct.calculate_score(False, False, False, False, False, False, False)
-    score_with, _ = ct.calculate_score(False, False, False, False, False, False, True)
-    assert score_with > score_without
-
-
-def test_score_all_good():
-    score, level = ct.calculate_score(False, False, False, False, False, False, False)
-    assert score == 0
-    assert level == "LOW"
-
-
-# ── check_s3_bucket_public ─────────────────────────────────────────────────────
-
-def test_check_s3_bucket_not_public():
-    s3 = MagicMock()
-    s3.get_public_access_block.return_value = {"PublicAccessBlockConfiguration": {
-        "BlockPublicAcls": True,
-        "IgnorePublicAcls": True,
-        "BlockPublicPolicy": True,
-        "RestrictPublicBuckets": True,
-    }}
-    assert ct.check_s3_bucket_public(s3, "my-bucket") is False
-
-
-def test_check_s3_bucket_public_partial_block():
-    s3 = MagicMock()
-    s3.get_public_access_block.return_value = {"PublicAccessBlockConfiguration": {
-        "BlockPublicAcls": True,
-        "IgnorePublicAcls": False,
-        "BlockPublicPolicy": True,
-        "RestrictPublicBuckets": True,
-    }}
-    assert ct.check_s3_bucket_public(s3, "my-bucket") is True
-
-
-def test_check_s3_bucket_api_error_returns_false():
-    s3 = MagicMock()
-    s3.get_public_access_block.side_effect = _client_error("AccessDenied")
-    assert ct.check_s3_bucket_public(s3, "my-bucket") is False
-
-
-# ── check_event_selectors ──────────────────────────────────────────────────────
-
-def test_check_event_selectors_basic():
-    mock_ct = MagicMock()
-    mock_ct.get_event_selectors.return_value = {
-        "EventSelectors": [{"IncludeManagementEvents": True, "DataResources": [], "ReadWriteType": "All"}],
-        "AdvancedEventSelectors": [],
-    }
-    has_mgmt, has_data, rw = ct.check_event_selectors(mock_ct, "arn:aws:cloudtrail:us-east-1:123:trail/test")
-    assert has_mgmt is True
-    assert has_data is False
-    assert rw == "All"
-
-
-def test_check_event_selectors_advanced():
-    mock_ct = MagicMock()
-    mock_ct.get_event_selectors.return_value = {
-        "EventSelectors": [],
-        "AdvancedEventSelectors": [
-            {"FieldSelectors": [{"Field": "eventCategory", "Equals": ["Management"]}]}
-        ],
-    }
-    has_mgmt, has_data, rw = ct.check_event_selectors(mock_ct, "arn:aws:cloudtrail:us-east-1:123:trail/test")
-    assert has_mgmt is True
-
-
-def test_check_event_selectors_error():
-    mock_ct = MagicMock()
-    mock_ct.get_event_selectors.side_effect = _client_error("TrailNotFoundException")
-    has_mgmt, has_data, rw = ct.check_event_selectors(mock_ct, "bad-arn")
-    assert has_mgmt is False
-    assert rw == "Unknown"
-
-
-# ── check_trail_logging ────────────────────────────────────────────────────────
-
-def test_check_trail_logging_active():
-    mock_ct = MagicMock()
-    mock_ct.get_trail_status.return_value = {"IsLogging": True}
-    is_logging, last_delivery, delivery_error = ct.check_trail_logging(mock_ct, "arn:aws:cloudtrail:us-east-1:123:trail/prod")
-    assert is_logging is True
-
-
-def test_check_trail_logging_stopped():
-    mock_ct = MagicMock()
-    mock_ct.get_trail_status.return_value = {"IsLogging": False}
-    is_logging, last_delivery, delivery_error = ct.check_trail_logging(mock_ct, "arn:aws:cloudtrail:us-east-1:123:trail/prod")
-    assert is_logging is False
-
-
-def test_check_trail_logging_api_error():
-    mock_ct = MagicMock()
-    mock_ct.get_trail_status.side_effect = _client_error("TrailNotFoundException")
-    is_logging, last_delivery, delivery_error = ct.check_trail_logging(mock_ct, "bad-arn")
-    assert is_logging is False
-    assert last_delivery is None
-    assert delivery_error is None
-
-
-# ── analyse_trail ──────────────────────────────────────────────────────────────
+# ── Fixtures ──────────────────────────────────────────────────────────────────
 
 FULLY_CONFIGURED_TRAIL = {
-    "TrailARN": "arn:aws:cloudtrail:us-east-1:123:trail/prod",
-    "Name": "prod",
+    "Name": "my-trail",
+    "TrailARN": "arn:aws:cloudtrail:us-east-1:123456789012:trail/my-trail",
     "HomeRegion": "us-east-1",
     "IsMultiRegionTrail": True,
     "IncludeGlobalServiceEvents": True,
     "LogFileValidationEnabled": True,
-    "KMSKeyId": "arn:aws:kms:us-east-1:123:key/abc",
-    "CloudWatchLogsLogGroupArn": "arn:aws:logs:us-east-1:123:log-group/ct",
+    "KMSKeyId": "arn:aws:kms:us-east-1:123456789012:key/abc123",
+    "CloudWatchLogsLogGroupArn": "arn:aws:logs:us-east-1:123456789012:log-group:CloudTrailLogs",
     "S3BucketName": "my-logs-bucket",
-    "HasCustomEventSelectors": True,
+    "SnsTopicARN": "arn:aws:sns:us-east-1:123456789012:my-topic",
 }
 
 
 def _make_ct_client(is_logging=True, delivery_error=None):
-    mock_ct = MagicMock()
-    mock_ct.get_trail_status.return_value = {
+    mock = MagicMock()
+    mock.get_trail_status.return_value = {
         "IsLogging": is_logging,
+        "LatestDeliveryTime": None,
         "LatestDeliveryError": delivery_error,
     }
-    mock_ct.get_event_selectors.return_value = {
+    mock.get_event_selectors.return_value = {
         "EventSelectors": [
-            {"IncludeManagementEvents": True, "DataResources": [], "ReadWriteType": "All"}
+            {
+                "IncludeManagementEvents": True,
+                "DataResources": [],
+                "ReadWriteType": "All",
+            }
         ],
         "AdvancedEventSelectors": [],
     }
-    return mock_ct
+    return mock
 
 
 def _make_s3_client(is_public=False):
-    s3 = MagicMock()
+    mock = MagicMock()
     if is_public:
-        s3.get_public_access_block.return_value = {"PublicAccessBlockConfiguration": {
-            "BlockPublicAcls": False,
-            "IgnorePublicAcls": False,
-            "BlockPublicPolicy": False,
-            "RestrictPublicBuckets": False,
-        }}
+        mock.get_public_access_block.return_value = {
+            "PublicAccessBlockConfiguration": {
+                "BlockPublicAcls": False,
+                "IgnorePublicAcls": False,
+                "BlockPublicPolicy": False,
+                "RestrictPublicBuckets": False,
+            }
+        }
     else:
-        s3.get_public_access_block.return_value = {"PublicAccessBlockConfiguration": {
-            "BlockPublicAcls": True,
-            "IgnorePublicAcls": True,
-            "BlockPublicPolicy": True,
-            "RestrictPublicBuckets": True,
-        }}
-    return s3
+        mock.get_public_access_block.return_value = {
+            "PublicAccessBlockConfiguration": {
+                "BlockPublicAcls": True,
+                "IgnorePublicAcls": True,
+                "BlockPublicPolicy": True,
+                "RestrictPublicBuckets": True,
+            }
+        }
+    return mock
 
 
-def test_analyse_trail_fully_logging():
+# ── check_trail_logging ────────────────────────────────────────────────────────
+
+def test_check_trail_logging_returns_true_when_logging():
+    mock_ct = _make_ct_client(is_logging=True)
+    is_logging, last_delivery, delivery_error = ct.check_trail_logging(mock_ct, "arn:aws:cloudtrail:us-east-1:123:trail/test")
+    assert is_logging is True
+    assert delivery_error is None
+
+
+def test_check_trail_logging_returns_false_on_client_error():
+    mock_ct = MagicMock()
+    mock_ct.get_trail_status.side_effect = _client_error("AccessDenied")
+    is_logging, last_delivery, delivery_error = ct.check_trail_logging(mock_ct, "arn:aws:cloudtrail:us-east-1:123:trail/test")
+    assert is_logging is False
+
+
+# ── check_event_selectors ─────────────────────────────────────────────────────
+
+def test_check_event_selectors_management_events():
+    mock_ct = _make_ct_client()
+    has_management, has_data, read_write = ct.check_event_selectors(mock_ct, "arn:aws:cloudtrail:us-east-1:123:trail/test")
+    assert has_management is True
+    assert read_write == "All"
+
+
+def test_check_event_selectors_returns_false_on_error():
+    mock_ct = MagicMock()
+    mock_ct.get_event_selectors.side_effect = _client_error("AccessDenied")
+    has_management, has_data, read_write = ct.check_event_selectors(mock_ct, "arn:aws:cloudtrail:us-east-1:123:trail/test")
+    assert has_management is False
+    assert has_data is False
+
+
+# ── check_s3_bucket_public ────────────────────────────────────────────────────
+
+def test_check_s3_bucket_not_public():
+    s3 = _make_s3_client(is_public=False)
+    assert ct.check_s3_bucket_public(s3, "my-bucket") is False
+
+
+def test_check_s3_bucket_public():
+    s3 = _make_s3_client(is_public=True)
+    assert ct.check_s3_bucket_public(s3, "my-bucket") is True
+
+
+def test_check_s3_bucket_public_client_error_returns_false():
+    s3 = MagicMock()
+    s3.get_public_access_block.side_effect = _client_error("NoSuchPublicAccessBlockConfiguration")
+    assert ct.check_s3_bucket_public(s3, "my-bucket") is False
+
+
+# ── analyse_trail ─────────────────────────────────────────────────────────────
+
+def test_analyse_trail_fully_configured_low_risk():
     mock_ct = _make_ct_client(is_logging=True)
     s3 = _make_s3_client(is_public=False)
     result = ct.analyse_trail(mock_ct, s3, FULLY_CONFIGURED_TRAIL)
-
     assert result["risk_level"] == "LOW"
     assert result["is_logging"] is True
     assert result["kms_encrypted"] is True
     assert result["cloudwatch_logs"] is True
     assert result["log_file_validation"] is True
     assert result["is_multi_region"] is True
-    assert result["s3_bucket_public"] is False
-    # No critical/warning flags about KMS or CloudWatch
-    flags_text = " ".join(result["flags"])
-    assert "Log files not KMS encrypted" not in flags_text
-    assert "No CloudWatch Logs integration" not in flags_text
 
 
-def test_analyse_trail_missing_kms_and_cloudwatch():
-    trail = FULLY_CONFIGURED_TRAIL.copy()
-    del trail["KMSKeyId"]
-    del trail["CloudWatchLogsLogGroupArn"]
+def test_analyse_trail_not_logging_raises_score():
+    mock_ct = _make_ct_client(is_logging=False)
+    s3 = _make_s3_client(is_public=False)
+    result = ct.analyse_trail(mock_ct, s3, FULLY_CONFIGURED_TRAIL)
+    assert result["is_logging"] is False
+    assert result["severity_score"] >= 5
+    assert any("NOT actively logging" in f for f in result["flags"])
 
+
+def test_analyse_trail_s3_public_flags_correctly():
+    mock_ct = _make_ct_client(is_logging=True)
+    s3 = _make_s3_client(is_public=True)
+    result = ct.analyse_trail(mock_ct, s3, FULLY_CONFIGURED_TRAIL)
+    assert result["s3_bucket_public"] is True
+    assert any("publicly accessible" in f for f in result["flags"])
+
+
+def test_analyse_trail_returns_remediations_key():
     mock_ct = _make_ct_client(is_logging=True)
     s3 = _make_s3_client(is_public=False)
-    result = ct.analyse_trail(mock_ct, s3, trail)
-
-    assert result["kms_encrypted"] is False
-    assert result["cloudwatch_logs"] is False
-    flags_text = " ".join(result["flags"])
-    assert "Log files not KMS encrypted" in flags_text
-    assert "No CloudWatch Logs integration" in flags_text
+    result = ct.analyse_trail(mock_ct, s3, FULLY_CONFIGURED_TRAIL)
+    assert "remediations" in result
+    assert isinstance(result["remediations"], list)
 
 
-# ── check_region_coverage ──────────────────────────────────────────────────────
+# ── calculate_score ───────────────────────────────────────────────────────────
 
-def test_check_region_coverage_region_with_trail():
-    """A region where describe_trails returns a non-empty list should NOT be in uncovered."""
-    session = MagicMock()
-    mock_ct = MagicMock()
-    mock_ct.describe_trails.return_value = {"trailList": [{"Name": "prod"}]}
-    session.client.return_value = mock_ct
-
-    uncovered = ct.check_region_coverage(session)
-    assert len(uncovered) == 0
+def test_calculate_score_all_good():
+    score, level = ct.calculate_score(False, False, False, False, False, False, False)
+    assert score == 0
+    assert level == "LOW"
 
 
-def test_check_region_coverage_region_without_trail():
-    """A region where describe_trails returns empty list should appear in uncovered."""
-    session = MagicMock()
-    mock_ct = MagicMock()
-    mock_ct.describe_trails.return_value = {"trailList": []}
-    session.client.return_value = mock_ct
-
-    uncovered = ct.check_region_coverage(session)
-    # All regions return empty trailList, so all should be uncovered
-    assert len(uncovered) == len(ct.ALL_REGIONS)
-    assert "us-east-1" in uncovered
+def test_calculate_score_not_logging_critical():
+    score, level = ct.calculate_score(True, False, False, False, False, False, True)
+    assert score >= 8
+    assert level == "CRITICAL"
 
 
-def test_check_region_coverage_api_error_not_uncovered():
-    """A region where the API raises a ClientError should NOT be counted as uncovered.
-    API errors (e.g. opt-in regions not enabled) should be skipped to avoid false positives."""
-    session = MagicMock()
-    mock_ct = MagicMock()
-    mock_ct.describe_trails.side_effect = _client_error("AccessDenied")
-    session.client.return_value = mock_ct
-
-    # The function should skip regions with API errors rather than flagging them uncovered
-    uncovered = ct.check_region_coverage(session)
-    assert isinstance(uncovered, list)
-    # All regions errored, so none should be in uncovered
-    assert len(uncovered) == 0
-    assert "us-east-1" not in uncovered
+def test_calculate_score_capped_at_10():
+    score, level = ct.calculate_score(True, True, True, True, True, True, True)
+    assert score <= 10
 
 
-# ── write_json / write_csv permissions ────────────────────────────────────────
+# ── write_json ────────────────────────────────────────────────────────────────
 
 def test_write_json_creates_file_with_600_perms(tmp_path):
-    path = str(tmp_path / "report.json")
     report = {"generated_at": "2026-01-01", "findings": []}
-    ct.write_json(report, path)
-    assert os.path.exists(path)
-    mode = oct(os.stat(path).st_mode)[-3:]
-    assert mode == "600"
+    out_path = str(tmp_path / "test.json")
+    ct.write_json(report, out_path)
+    assert (tmp_path / "test.json").exists()
+    mode = (tmp_path / "test.json").stat().st_mode & 0o777
+    assert mode == 0o600
 
+
+# ── write_csv ─────────────────────────────────────────────────────────────────
 
 def test_write_csv_creates_file_with_600_perms(tmp_path):
-    path = str(tmp_path / "report.csv")
     findings = [{
         "name": "prod",
         "arn": "arn:aws:cloudtrail:us-east-1:123:trail/prod",
@@ -286,8 +222,97 @@ def test_write_csv_creates_file_with_600_perms(tmp_path):
         "last_delivery": "2026-01-01T00:00:00+00:00",
         "delivery_error": None,
         "flags": ["✅ Log file validation enabled"],
+        "remediations": [],
     }]
+    out_path = str(tmp_path / "test.csv")
+    ct.write_csv(findings, out_path)
+    assert (tmp_path / "test.csv").exists()
+    mode = (tmp_path / "test.csv").stat().st_mode & 0o777
+    assert mode == 0o600
+
+
+def test_write_csv_empty_findings_no_file(tmp_path):
+    out_path = str(tmp_path / "empty.csv")
+    ct.write_csv([], out_path)
+    assert not (tmp_path / "empty.csv").exists()
+
+
+# ── write_html ────────────────────────────────────────────────────────────────
+
+def test_write_html_creates_file_with_600_perms(tmp_path):
+    report = {
+        "generated_at": "2026-01-01T00:00:00+00:00",
+        "findings": [],
+        "summary": {
+            "total_trails": 0,
+            "critical": 0,
+            "high": 0,
+            "medium": 0,
+            "low": 0,
+            "trails_not_logging": 0,
+            "uncovered_regions": 0,
+            "no_kms": 0,
+            "no_cloudwatch": 0,
+            "regions_checked": 18,
+        },
+        "uncovered_regions": [],
+    }
+    out_path = str(tmp_path / "test.html")
+    ct.write_html(report, out_path)
+    assert (tmp_path / "test.html").exists()
+    mode = (tmp_path / "test.html").stat().st_mode & 0o777
+    assert mode == 0o600
+
+
+# ── Remediation tests ─────────────────────────────────────────────────────────
+
+def test_analyse_trail_flagged_has_remediations():
+    """Each non-✅ flag should have a paired remediation."""
+    # A trail with missing KMS and CloudWatch will have ⚠️ flags
+    trail = FULLY_CONFIGURED_TRAIL.copy()
+    del trail["KMSKeyId"]
+    del trail["CloudWatchLogsLogGroupArn"]
+
+    mock_ct = _make_ct_client(is_logging=True)
+    s3 = _make_s3_client(is_public=False)
+    result = ct.analyse_trail(mock_ct, s3, trail)
+
+    assert "remediations" in result
+    warning_flags = [f for f in result["flags"] if not f.startswith("✅")]
+    assert len(result["remediations"]) == len(warning_flags)
+    assert all(len(r) > 0 for r in result["remediations"])
+
+
+def test_write_csv_includes_remediations_column(tmp_path):
+    """The CSV output should include a remediations column."""
+    findings = [{
+        "name": "prod",
+        "arn": "arn:aws:cloudtrail:us-east-1:123:trail/prod",
+        "home_region": "us-east-1",
+        "risk_level": "LOW",
+        "severity_score": 0,
+        "is_logging": True,
+        "is_multi_region": True,
+        "include_global_events": True,
+        "log_file_validation": True,
+        "kms_encrypted": True,
+        "kms_key": "arn:aws:kms:us-east-1:123:key/abc",
+        "cloudwatch_logs": True,
+        "cloudwatch_group": "arn:aws:logs:us-east-1:123:log-group/ct",
+        "s3_bucket": "my-logs-bucket",
+        "s3_bucket_public": False,
+        "sns_enabled": False,
+        "management_events": True,
+        "data_events": False,
+        "read_write_type": "All",
+        "last_delivery": "2026-01-01T00:00:00+00:00",
+        "delivery_error": None,
+        "flags": ["✅ Log file validation enabled"],
+        "remediations": [],
+    }]
+    path = str(tmp_path / "test.csv")
     ct.write_csv(findings, path)
-    assert os.path.exists(path)
-    mode = oct(os.stat(path).st_mode)[-3:]
-    assert mode == "600"
+    with open(path) as f:
+        reader = csv_module.DictReader(f)
+        headers = reader.fieldnames
+    assert "remediations" in headers

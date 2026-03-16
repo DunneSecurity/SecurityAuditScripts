@@ -176,21 +176,53 @@ def analyse_sg(ec2, sg, region, attached_resources):
     is_attached = sg_id in attached_resources
 
     flags = []
+    remediations = []
     if all_traffic:
         flags.append("❌ All inbound traffic open to 0.0.0.0/0")
+        remediations.append(
+            "Delete or restrict the -1/0.0.0.0/0 inbound rule. "
+            "Allow only required ports from specific CIDRs or SG references"
+        )
     if open_ssh:
         flags.append("❌ SSH (22) open to the world")
+        remediations.append(
+            "Restrict port 22 to your IP/VPN CIDR, or use AWS Systems Manager "
+            "Session Manager instead of direct SSH access"
+        )
     if open_rdp:
         flags.append("❌ RDP (3389) open to the world")
+        remediations.append(
+            "Restrict port 3389 to your IP/VPN CIDR, or use AWS Systems Manager "
+            "Fleet Manager for remote access"
+        )
     for p in high_risk_open:
         if not p.startswith(("22/", "3389/")):
             flags.append(f"⚠️ {p} open to the world")
+            remediations.append(
+                "Restrict this port to known source CIDRs; "
+                "use Security Group references where possible"
+            )
     if is_default and open_ports:
         flags.append("⚠️ Default security group has open rules (best practice: keep default empty)")
+        remediations.append(
+            "Remove all inbound/outbound rules from the default SG: "
+            "EC2 Console → Security Groups → default → Inbound/Outbound rules → Delete all rules"
+        )
     if unrestricted_egress:
         flags.append("ℹ️ Unrestricted outbound traffic (0.0.0.0/0) — consider restricting")
+        remediations.append(
+            "Restrict egress to required ports/destinations; "
+            "enables defence-in-depth against lateral movement"
+        )
     if not is_attached:
         flags.append("ℹ️ Security group is not attached to any resource")
+        remediations.append(
+            "Delete unused SG to reduce attack surface: "
+            "EC2 Console → Security Groups → Actions → Delete security group"
+        )
+    # NOTE: ✅ (positive) flags are appended last with no matching remediations.
+    # The HTML renderer's fallback (flags_list[len(rems_list):]) depends on this ordering.
+    # If adding a new ✅ flag, always append it after all ⚠️/ℹ️/❌ flags.
     if not flags:
         flags.append("✅ No world-open ingress rules detected")
 
@@ -218,6 +250,7 @@ def analyse_sg(ec2, sg, region, attached_resources):
         "ingress_rule_count": len(ingress),
         "egress_rule_count": len(egress),
         "flags": flags,
+        "remediations": remediations,
     }
 
 
@@ -252,14 +285,14 @@ def write_csv(findings, path):
         "risk_level", "severity_score", "is_default", "is_attached",
         "all_traffic_open", "open_ssh", "open_rdp",
         "high_risk_ports_open", "open_port_findings",
-        "unrestricted_egress", "ingress_rule_count", "egress_rule_count", "flags",
+        "unrestricted_egress", "ingress_rule_count", "egress_rule_count", "flags", "remediations",
     ]
     with open(path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         for finding in findings:
             row = finding.copy()
-            for field in ["high_risk_ports_open", "open_port_findings", "flags"]:
+            for field in ["high_risk_ports_open", "open_port_findings", "flags", "remediations"]:
                 val = row.get(field, [])
                 row[field] = "; ".join(val) if isinstance(val, list) else (val or "")
             writer.writerow(row)
@@ -277,7 +310,19 @@ def write_html(report, path):
     rows = ""
     for f in findings:
         color = risk_colors.get(f["risk_level"], "#999")
-        flags_html = "<br>".join(html.escape(flag) for flag in f.get("flags", [])) or "None"
+        flag_items = []
+        flags_list = f.get("flags", [])
+        rems_list = f.get("remediations", [])
+        for flag, rem in zip(flags_list, rems_list):
+            flag_items.append(
+                f'<div class="flag-item">'
+                f'<span class="flag-text">{html.escape(flag)}</span>'
+                f'<span class="rem-text">↳ {html.escape(rem)}</span>'
+                f'</div>'
+            )
+        for flag in flags_list[len(rems_list):]:
+            flag_items.append(f'<div class="flag-item"><span class="flag-text">{html.escape(flag)}</span></div>')
+        flags_html = "".join(flag_items) or "None"
         ports_html = "<br>".join(html.escape(p) for p in f.get("high_risk_ports_open", [])) or "None"
         group_id_escaped = html.escape(f["group_id"])
         group_name_escaped = html.escape(f["group_name"])
@@ -323,6 +368,9 @@ def write_html(report, path):
   tr:hover td {{ background: #f8f9ff; }}
   code {{ background: #ecf0f1; padding: 2px 5px; border-radius: 3px; font-size: 0.85em; }}
   .footer {{ text-align: center; padding: 20px; color: #999; font-size: 0.85em; }}
+  .flag-item {{ margin-bottom: 6px; }}
+  .flag-text {{ display: block; font-size: 0.85em; }}
+  .rem-text {{ display: block; font-size: 0.78em; color: #555; padding-left: 12px; font-style: italic; }}
 </style>
 </head>
 <body>

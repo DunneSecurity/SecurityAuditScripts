@@ -157,28 +157,78 @@ def analyse_trail(ct, s3, trail):
         s3_public = check_s3_bucket_public(s3, s3_bucket)
 
     flags = []
+    remediations = []
     if not is_logging:
         flags.append("❌ Trail is NOT actively logging")
+        remediations.append(
+            "Start logging: CloudTrail Console → Trails → select trail → "
+            "toggle Logging to enabled"
+        )
     if delivery_error:
         flags.append(f"⚠️ Last delivery error: {delivery_error}")
+        remediations.append(
+            "Check S3 bucket policy grants CloudTrail write access; "
+            "verify the destination bucket exists and is not deleted"
+        )
     if not log_validation:
         flags.append("⚠️ Log file validation disabled")
+        remediations.append(
+            "Enable log file validation: CloudTrail Console → Trails → "
+            "select trail → Edit → Log file validation → Enabled"
+        )
     if not has_cloudwatch:
         flags.append("⚠️ No CloudWatch Logs integration")
+        remediations.append(
+            "Add CloudWatch log group: CloudTrail Console → Trails → "
+            "select trail → Edit → CloudWatch Logs → configure log group and IAM role"
+        )
     if not has_kms:
         flags.append("⚠️ Log files not KMS encrypted")
+        remediations.append(
+            "Enable SSE-KMS: CloudTrail Console → Trails → select trail → "
+            "Edit → Log file SSE-KMS encryption → choose or create a CMK"
+        )
     if not is_multi_region:
         flags.append("⚠️ Single-region trail only")
+        remediations.append(
+            "Enable multi-region: CloudTrail Console → Trails → select trail → "
+            "Edit → Apply trail to all regions → Yes"
+        )
     if not include_global:
         flags.append("⚠️ Global service events not captured")
+        remediations.append(
+            "Enable global service events: CloudTrail Console → Trails → "
+            "select trail → Edit → Include global service events → Yes"
+        )
     if s3_public:
         flags.append("❌ Trail S3 bucket is publicly accessible!")
+        remediations.append(
+            "Block public access on the log bucket immediately: "
+            "S3 Console → select bucket → Permissions → Block all public access → Edit → enable all"
+        )
     if not has_management:
         flags.append("⚠️ Management events not captured")
+        remediations.append(
+            "Edit event selectors to include management events: "
+            "CloudTrail Console → Trails → select trail → Event selectors → "
+            "Management events → Read/Write → All"
+        )
     if not has_data:
         flags.append("ℹ️ Data events not captured (S3/Lambda activity)")
+        remediations.append(
+            "Enable data event selectors for S3 and/or Lambda if needed for compliance: "
+            "CloudTrail Console → Trails → select trail → Event selectors → Data events"
+        )
     if read_write == "ReadOnly":
         flags.append("⚠️ Only capturing read events (not writes)")
+        remediations.append(
+            "Set ReadWriteType to All in event selectors: "
+            "CloudTrail Console → Trails → select trail → Event selectors → "
+            "Management events → Read/Write → All"
+        )
+    # NOTE: ✅ (positive) flags are appended last with no matching remediations.
+    # The HTML renderer's fallback (flags_list[len(rems_list):]) depends on this ordering.
+    # If adding a new ✅ flag, always append it after all ⚠️/ℹ️/❌ flags.
     if has_sns:
         flags.append("✅ SNS notifications enabled")
     if has_kms:
@@ -218,6 +268,7 @@ def analyse_trail(ct, s3, trail):
         "last_delivery": last_delivery_str,
         "delivery_error": delivery_error,
         "flags": flags,
+        "remediations": remediations,
     }
 
 
@@ -254,7 +305,7 @@ def write_csv(findings, path):
         "log_file_validation", "kms_encrypted", "kms_key",
         "cloudwatch_logs", "cloudwatch_group", "s3_bucket", "s3_bucket_public",
         "sns_enabled", "management_events", "data_events", "read_write_type",
-        "last_delivery", "delivery_error", "flags",
+        "last_delivery", "delivery_error", "flags", "remediations",
     ]
     with open(path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
@@ -262,6 +313,7 @@ def write_csv(findings, path):
         for finding in findings:
             row = finding.copy()
             row["flags"] = "; ".join(row.get("flags", []))
+            row["remediations"] = "; ".join(row.get("remediations", []))
             writer.writerow(row)
     os.chmod(path, 0o600)
     log.info(f"CSV report: {path}")
@@ -278,7 +330,19 @@ def write_html(report, path):
     rows = ""
     for f in findings:
         color = risk_colors.get(f["risk_level"], "#999")
-        flags_html = "<br>".join(html.escape(flag) for flag in f.get("flags", [])) or "None"
+        flag_items = []
+        flags_list = f.get("flags", [])
+        rems_list = f.get("remediations", [])
+        for flag, rem in zip(flags_list, rems_list):
+            flag_items.append(
+                f'<div class="flag-item">'
+                f'<span class="flag-text">{html.escape(flag)}</span>'
+                f'<span class="rem-text">↳ {html.escape(rem)}</span>'
+                f'</div>'
+            )
+        for flag in flags_list[len(rems_list):]:
+            flag_items.append(f'<div class="flag-item"><span class="flag-text">{html.escape(flag)}</span></div>')
+        flags_html = "".join(flag_items) or "None"
         name_escaped = html.escape(f["name"])
         home_region_escaped = html.escape(str(f["home_region"]))
         rows += f"""
@@ -327,6 +391,9 @@ def write_html(report, path):
   tr:last-child td {{ border-bottom: none; }}
   tr:hover td {{ background: #f8f9ff; }}
   .footer {{ text-align: center; padding: 20px; color: #999; font-size: 0.85em; }}
+  .flag-item {{ margin-bottom: 6px; }}
+  .flag-text {{ display: block; font-size: 0.85em; }}
+  .rem-text {{ display: block; font-size: 0.78em; color: #555; padding-left: 12px; font-style: italic; }}
 </style>
 </head>
 <body>

@@ -371,9 +371,65 @@ def test_write_csv_creates_file_with_600_perms(tmp_path):
         "lifecycle_rules": 1,
         "policy_findings": [],
         "flags": [],
+        "remediations": [],
     }]
     out_path = str(tmp_path / "test.csv")
     s3a.write_csv(sample_findings, out_path)
     assert (tmp_path / "test.csv").exists()
     mode = (tmp_path / "test.csv").stat().st_mode & 0o777
     assert mode == 0o600
+
+
+# ── remediation tests ─────────────────────────────────────────────────────────
+
+def test_analyse_bucket_flagged_has_remediations():
+    """Each non-✅ flag should have a paired remediation."""
+    s3 = MagicMock()
+    # No public access block (generates a ⚠️ flag)
+    s3.get_public_access_block.side_effect = _client_error("NoSuchPublicAccessBlockConfiguration")
+    s3.get_bucket_acl.return_value = {"Owner": {"ID": "abc"}, "Grants": []}
+    s3.get_bucket_encryption.side_effect = _client_error("ServerSideEncryptionConfigurationNotFoundError")
+    s3.get_bucket_versioning.return_value = {}
+    s3.get_bucket_logging.return_value = {}
+    s3.get_bucket_lifecycle_configuration.side_effect = _client_error("NoSuchLifecycleConfiguration")
+    s3.get_bucket_policy.side_effect = _client_error("NoSuchBucketPolicy")
+    s3.get_bucket_location.return_value = {"LocationConstraint": "us-east-1"}
+
+    result = s3a.analyse_bucket(s3, "test-bucket")
+
+    assert "remediations" in result
+    warning_flags = [f for f in result["flags"] if not f.startswith("✅")]
+    assert len(result["remediations"]) == len(warning_flags)
+    assert all(len(r) > 0 for r in result["remediations"])
+
+
+def test_write_csv_includes_remediations_column(tmp_path):
+    """The CSV output should include a remediations column."""
+    import csv as csv_module
+    sample_findings = [{
+        "name": "test-bucket",
+        "region": "us-east-1",
+        "risk_level": "LOW",
+        "severity_score": 0,
+        "is_public": False,
+        "public_acl": False,
+        "public_policy": False,
+        "block_public_access_enabled": True,
+        "encryption_enabled": True,
+        "encryption_algorithm": "AES256",
+        "kms_key": None,
+        "versioning_status": "Enabled",
+        "mfa_delete": "Disabled",
+        "logging_enabled": True,
+        "log_target_bucket": "log-bucket",
+        "lifecycle_rules": 1,
+        "policy_findings": [],
+        "flags": ["⚠️ Versioning disabled"],
+        "remediations": ["Enable versioning: S3 Console → Properties → Bucket Versioning → Enable"],
+    }]
+    out_path = str(tmp_path / "test.csv")
+    s3a.write_csv(sample_findings, out_path)
+    with open(out_path) as f:
+        reader = csv_module.DictReader(f)
+        headers = reader.fieldnames
+    assert "remediations" in headers

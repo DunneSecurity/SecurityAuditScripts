@@ -550,16 +550,65 @@ def write_html(report, path):
         if len(high_risk_list) > 5:
             high_risk += f"<br>...+{len(high_risk_list)-5} more"
         key_issues = "<br>".join(html.escape(k) for k in f.get("access_key_issues", [])) or "N/A"
-        warnings = []
+        # Remediation hints keyed by warning condition
+        remediation_hints = {
+            "mfa_warning": (
+                "Enable MFA: IAM Console → Users → select user → "
+                "Security credentials → Assign MFA device"
+            ),
+            "has_admin_policy": (
+                "Review need for AdministratorAccess; replace with least-privilege "
+                "policies scoped to required services only"
+            ),
+            "cross_account_trust": (
+                "Review trust policy; ensure ExternalId condition is required; "
+                "scope to specific trusted principal ARNs"
+            ),
+        }
+
+        warning_parts = []
         if f.get("mfa_warning"):
-            warnings.append("⚠️ No MFA")
+            hint = remediation_hints["mfa_warning"]
+            warning_parts.append(
+                f'<div class="flag-item">'
+                f'<span class="flag-text">⚠️ No MFA</span>'
+                f'<span class="rem-text">↳ {html.escape(hint)}</span>'
+                f'</div>'
+            )
         if f.get("has_admin_policy"):
-            warnings.append("⚠️ Admin Policy")
+            hint = remediation_hints["has_admin_policy"]
+            warning_parts.append(
+                f'<div class="flag-item">'
+                f'<span class="flag-text">⚠️ Admin Policy</span>'
+                f'<span class="rem-text">↳ {html.escape(hint)}</span>'
+                f'</div>'
+            )
         if f.get("cross_account_trust"):
-            warnings.append("⚠️ Cross-Account Trust")
+            hint = remediation_hints["cross_account_trust"]
+            warning_parts.append(
+                f'<div class="flag-item">'
+                f'<span class="flag-text">⚠️ Cross-Account Trust</span>'
+                f'<span class="rem-text">↳ {html.escape(hint)}</span>'
+                f'</div>'
+            )
         if f.get("permission_boundary"):
-            warnings.append("✅ Boundary Set")
-        warning_html = "<br>".join(warnings) or ""
+            warning_parts.append(
+                '<div class="flag-item"><span class="flag-text">✅ Boundary Set</span></div>'
+            )
+        warning_html = "".join(warning_parts)
+
+        high_risk_rem = ""
+        if high_risk_list:
+            high_risk_rem = (
+                '<div class="rem-text" style="margin-top:4px">↳ Remove unused high-risk permissions; '
+                'apply least-privilege; use IAM Access Analyzer to identify unused access</div>'
+            )
+        privesc_rem = ""
+        if f.get("privilege_escalation_paths"):
+            privesc_rem = (
+                '<div class="rem-text" style="margin-top:4px">↳ Remove the action(s) forming the '
+                'escalation path; review IAM PassRole usage; consider permission boundaries</div>'
+            )
         name_escaped = html.escape(f["name"])
         arn_escaped = html.escape(f["arn"])
 
@@ -570,8 +619,8 @@ def write_html(report, path):
             <td><span style="background:#2c3e50;color:white;padding:2px 6px;border-radius:3px;font-size:0.8em">{f['type'].upper()}</span></td>
             <td>{name_escaped}</td>
             <td style="font-size:0.8em;color:#666">{arn_escaped}</td>
-            <td style="font-size:0.85em">{high_risk}</td>
-            <td style="font-size:0.85em;color:#c0392b">{privesc}</td>
+            <td style="font-size:0.85em">{high_risk}{high_risk_rem}</td>
+            <td style="font-size:0.85em;color:#c0392b">{privesc}{privesc_rem}</td>
             <td style="font-size:0.85em">{key_issues}</td>
             <td style="font-size:0.85em">{warning_html}</td>
         </tr>"""
@@ -604,6 +653,9 @@ def write_html(report, path):
   tr:last-child td {{ border-bottom: none; }}
   tr:hover td {{ background: #f8f9ff; }}
   .footer {{ text-align: center; padding: 20px; color: #999; font-size: 0.85em; }}
+  .flag-item {{ margin-bottom: 6px; }}
+  .flag-text {{ display: block; font-size: 0.85em; }}
+  .rem-text {{ display: block; font-size: 0.78em; color: #555; padding-left: 12px; font-style: italic; }}
 </style>
 </head>
 <body>

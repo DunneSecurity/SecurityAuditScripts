@@ -304,9 +304,54 @@ def test_write_csv_creates_file_with_600_perms(tmp_path):
         "ingress_rule_count": 0,
         "egress_rule_count": 0,
         "flags": [],
+        "remediations": [],
     }]
     out_path = str(tmp_path / "test.csv")
     sg.write_csv(sample_findings, out_path)
     assert (tmp_path / "test.csv").exists()
     mode = (tmp_path / "test.csv").stat().st_mode & 0o777
     assert mode == 0o600
+
+
+def test_analyse_sg_flagged_has_remediations():
+    """Each non-✅ flag should have a paired remediation."""
+    ec2 = MagicMock()
+    sg_dict = _make_sg_dict(ip_permissions=[_ssh_rule()])
+    result = sg.analyse_sg(ec2, sg_dict, "us-east-1", {"sg-123"})
+
+    assert "remediations" in result
+    warning_flags = [f for f in result["flags"] if not f.startswith("✅")]
+    assert len(result["remediations"]) == len(warning_flags)
+    assert all(len(r) > 0 for r in result["remediations"])
+
+
+def test_write_csv_includes_remediations_column(tmp_path):
+    """The CSV output should include a remediations column."""
+    import csv as csv_module
+    sample_findings = [{
+        "group_id": "sg-test",
+        "group_name": "test",
+        "vpc_id": "vpc-123",
+        "region": "us-east-1",
+        "description": "test group",
+        "risk_level": "LOW",
+        "severity_score": 0,
+        "is_default": False,
+        "is_attached": True,
+        "all_traffic_open": False,
+        "open_ssh": False,
+        "open_rdp": False,
+        "high_risk_ports_open": [],
+        "open_port_findings": [],
+        "unrestricted_egress": False,
+        "ingress_rule_count": 0,
+        "egress_rule_count": 0,
+        "flags": ["✅ No world-open ingress rules detected"],
+        "remediations": [],
+    }]
+    out_path = str(tmp_path / "test.csv")
+    sg.write_csv(sample_findings, out_path)
+    with open(out_path) as f:
+        reader = csv_module.DictReader(f)
+        headers = reader.fieldnames
+    assert "remediations" in headers

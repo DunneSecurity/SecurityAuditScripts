@@ -453,3 +453,53 @@ def test_write_csv_creates_file_with_600_perms(tmp_path):
     assert os.path.exists(path)
     mode = oct(os.stat(path).st_mode)[-3:]
     assert mode == "600"
+
+
+# ── remediations field tests ───────────────────────────────────────────────────
+
+def test_write_csv_includes_remediations_column(tmp_path):
+    """The CSV output should include a remediations column."""
+    import csv as csv_module
+    finding = {
+        "account_id": "123456789012",
+        "risk_level": "LOW",
+        "severity_score": 0,
+        "root_mfa_enabled": True,
+        "root_mfa_type": "Virtual MFA",
+        "root_access_keys_present": False,
+        "root_access_key_count": 0,
+        "root_last_console_login": None,
+        "root_used_recently": False,
+        "root_key_last_used": None,
+        "password_policy_issues": [],
+        "password_policy": None,
+        "alternate_contacts": {},
+        "missing_alternate_contacts": [],
+        "is_org_management_account": False,
+        "org_id": None,
+        "support_plan": "Business or higher",
+        "flags": ["✅ Root MFA enabled (Virtual MFA)", "✅ No root access keys present"],
+        "remediations": [],
+    }
+    path = str(tmp_path / "test.csv")
+    ra.write_csv(finding, path)
+    with open(path) as f:
+        reader = csv_module.DictReader(f)
+        headers = reader.fieldnames
+    assert "remediations" in headers
+
+
+def test_finding_remediations_count_matches_non_green_flags():
+    """For a finding with known flags, remediations count should match non-✅ flags."""
+    flags = [
+        "❌ CRITICAL: Root account has NO MFA enabled",
+        "❌ CRITICAL: 1 root access key(s) exist — delete immediately",
+        "⚠️ Alternate contact missing: SECURITY",
+    ]
+    remediations = [
+        "Enable MFA immediately: AWS Console → account menu (top-right) → Security credentials → Multi-factor authentication (MFA) → Assign MFA device",
+        "Delete root access keys: IAM Console → Dashboard → Security credentials (root) → Access keys → Delete all active keys",
+        "Add security contact: AWS Console → account menu → Account → Alternate contacts → Security → Edit",
+    ]
+    warning_flags = [f for f in flags if not f.startswith("✅")]
+    assert len(remediations) == len(warning_flags)

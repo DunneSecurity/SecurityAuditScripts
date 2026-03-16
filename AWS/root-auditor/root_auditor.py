@@ -299,28 +299,59 @@ def audit_root(session):
     )
 
     flags = []
+    remediations = []
     if not mfa_enabled:
         flags.append("❌ CRITICAL: Root account has NO MFA enabled")
+        remediations.append(
+            "Enable MFA immediately: AWS Console → account menu (top-right) → "
+            "Security credentials → Multi-factor authentication (MFA) → Assign MFA device"
+        )
     else:
         flags.append(f"✅ Root MFA enabled ({mfa_type or 'confirmed via credential report'})")
     if has_root_keys:
         flags.append(f"❌ CRITICAL: {key_count} root access key(s) exist — delete immediately")
+        remediations.append(
+            "Delete root access keys: IAM Console → Dashboard → "
+            "Security credentials (root) → Access keys → Delete all active keys"
+        )
     else:
         flags.append("✅ No root access keys present")
     if root_used_recently:
         flags.append(f"⚠️ Root account was used recently (last login: {root_last_login})")
+        remediations.append(
+            "Avoid using root; create an admin IAM role and use it instead. "
+            "Review what root was used for and migrate to least-privilege roles"
+        )
     elif root_last_login:
         flags.append(f"ℹ️ Root last login: {root_last_login}")
     else:
         flags.append("✅ No recent root console logins detected")
     for issue in policy_issues:
         flags.append(f"⚠️ Password policy: {issue}")
+        remediations.append(
+            "Update account password policy: IAM Console → Account settings → "
+            "Password policy → Edit → apply CIS/NIST recommendations"
+        )
     for contact in missing_contacts:
         flags.append(f"⚠️ Alternate contact missing: {contact}")
+        remediations.append(
+            f"Add {contact.lower()} contact: AWS Console → account menu → "
+            f"Account → Alternate contacts → {contact.capitalize()} → Edit"
+        )
+    # NOTE: ✅ (positive) flags are appended last with no matching remediations.
+    # The HTML renderer's fallback (flags_list[len(rems_list):]) depends on this ordering.
+    # If adding a new ✅ flag, always append it after all ⚠️/ℹ️/❌ flags.
     if is_org_master:
         flags.append("ℹ️ This is the AWS Organizations management account")
+        remediations.append(
+            "Ensure SCPs are applied at the root/OU level to restrict what member accounts can do"
+        )
     if support_plan == "Basic (no paid support)":
         flags.append("ℹ️ Basic support plan — consider upgrading for security response SLAs")
+        remediations.append(
+            "Consider upgrading to Developer or Business Support for access to "
+            "AWS security engineers and faster response SLAs for security incidents"
+        )
 
     return {
         "account_id": account_id,
@@ -341,6 +372,7 @@ def audit_root(session):
         "org_id": org_id,
         "support_plan": support_plan,
         "flags": flags,
+        "remediations": remediations,
     }
 
 
@@ -370,13 +402,13 @@ def write_csv(findings, path):
         "root_last_console_login", "root_used_recently",
         "root_key_last_used", "password_policy_issues",
         "missing_alternate_contacts", "is_org_management_account",
-        "support_plan", "flags",
+        "support_plan", "flags", "remediations",
     ]
     with open(path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         row = findings.copy()
-        for field in ["password_policy_issues", "missing_alternate_contacts", "flags"]:
+        for field in ["password_policy_issues", "missing_alternate_contacts", "flags", "remediations"]:
             val = row.get(field, [])
             row[field] = "; ".join(val) if isinstance(val, list) else (val or "")
         row.pop("password_policy", None)
@@ -391,7 +423,24 @@ def write_html(report, path):
     generated = report["generated_at"]
     risk_colors = {"CRITICAL": "#c0392b", "HIGH": "#e67e22", "MEDIUM": "#f1c40f", "LOW": "#27ae60"}
     color = risk_colors.get(f["risk_level"], "#999")
-    flags_html = "".join(f'<li>{html.escape(flag)}</li>' for flag in f.get("flags", []))
+    flags_list = f.get("flags", [])
+    rems_list = f.get("remediations", [])
+    # Build index: find which flags have remediations by checking if they're non-✅
+    # Use the pattern: remediations list was built in same order as non-✅ flags
+    rem_iter = iter(rems_list)
+    flags_html_parts = []
+    for flag in flags_list:
+        if not flag.startswith("✅"):
+            rem = next(rem_iter, "")
+            flags_html_parts.append(
+                f'<li class="flag-item">'
+                f'<span class="flag-text">{html.escape(flag)}</span>'
+                f'<small class="rem-text">↳ {html.escape(rem)}</small>'
+                f'</li>'
+            )
+        else:
+            flags_html_parts.append(f'<li>{html.escape(flag)}</li>')
+    flags_html = "".join(flags_html_parts)
     policy_html = "".join(f'<li>{html.escape(issue)}</li>' for issue in f.get("password_policy_issues", []))
 
     contacts = f.get("alternate_contacts", {})
@@ -430,6 +479,9 @@ def write_html(report, path):
   .metric .label {{ color: #666; }}
   .metric .value {{ font-weight: bold; }}
   .footer {{ text-align: center; padding: 20px; color: #999; font-size: 0.85em; }}
+  .flag-item {{ margin-bottom: 6px; }}
+  .flag-text {{ display: block; }}
+  .rem-text {{ display: block; font-size: 0.78em; color: #555; padding-left: 12px; font-style: italic; }}
 </style>
 </head>
 <body>

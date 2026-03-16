@@ -214,22 +214,34 @@ def analyse_bucket(s3, bucket_name):
     is_public = acl_public or policy_public or not all_blocked
 
     flags = []
+    remediations = []
     if block_check_failed:
         flags.append("⚠️ Could not verify Block Public Access configuration (API error)")
+        remediations.append("Check IAM permissions allow s3:GetBucketPublicAccessBlock")
     if acl_public:
         flags.append(f"⚠️ Public ACL ({acl_uri})")
+        remediations.append("Remove public grants: S3 Console → Permissions → ACL → revoke AllUsers/AuthenticatedUsers grants")
     if policy_public:
         flags.append("⚠️ Public bucket policy")
+        remediations.append('Remove public access: S3 Console → Permissions → Bucket policy → remove or deny "Principal": "*" Allow statements')
     if not block_check_failed and not all_blocked:
         flags.append("⚠️ Block Public Access not fully enabled")
+        remediations.append("Enable all 4 Block Public Access settings: S3 Console → Permissions → Block public access → Edit → enable all")
     if not encrypted:
         flags.append("⚠️ No encryption at rest")
+        remediations.append("Enable default encryption: S3 Console → Properties → Default encryption → SSE-S3 or SSE-KMS")
     if not versioned:
         flags.append("⚠️ Versioning disabled")
+        remediations.append("Enable versioning: S3 Console → Properties → Bucket Versioning → Enable")
     if not logging_on:
         flags.append("⚠️ Access logging disabled")
+        remediations.append("Enable server access logging: S3 Console → Properties → Server access logging → Enable")
     if encrypted and enc_algo == "AES256":
         flags.append("ℹ️ SSE-S3 (consider KMS for stronger control)")
+        remediations.append("Upgrade to SSE-KMS: S3 Console → Properties → Default encryption → SSE-KMS → choose a CMK for stronger key control")
+    # NOTE: ✅ (positive) flags are appended last with no matching remediations.
+    # The HTML renderer's fallback (flags_list[len(rems_list):]) depends on this ordering.
+    # If adding a new ✅ flag, always append it after all ⚠️/ℹ️/❌ flags.
     if encrypted and kms_key:
         flags.append("✅ KMS encryption")
     if mfa_delete == "Enabled":
@@ -260,6 +272,7 @@ def analyse_bucket(s3, bucket_name):
         "lifecycle_rules": lifecycle_count,
         "policy_findings": policy_findings,
         "flags": flags,
+        "remediations": remediations,
     }
 
 
@@ -281,14 +294,14 @@ def write_csv(findings, path):
         "block_public_access_enabled", "encryption_enabled",
         "encryption_algorithm", "kms_key", "versioning_status",
         "mfa_delete", "logging_enabled", "log_target_bucket",
-        "lifecycle_rules", "policy_findings", "flags",
+        "lifecycle_rules", "policy_findings", "flags", "remediations",
     ]
     with open(path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         for finding in findings:
             row = finding.copy()
-            for field in ["policy_findings", "flags"]:
+            for field in ["policy_findings", "flags", "remediations"]:
                 val = row.get(field, [])
                 row[field] = "; ".join(val) if isinstance(val, list) else (val or "")
             row.pop("block_public_access_config", None)
@@ -307,7 +320,20 @@ def write_html(report, path):
     rows = ""
     for f in findings:
         color = risk_colors.get(f["risk_level"], "#999")
-        flags_html = "<br>".join(html.escape(flag) for flag in f.get("flags", [])) or "None"
+        flag_items = []
+        for flag, rem in zip(f.get("flags", []), f.get("remediations", [])):
+            flag_items.append(
+                f'<div class="flag-item">'
+                f'<span class="flag-text">{html.escape(flag)}</span>'
+                f'<span class="rem-text">↳ {html.escape(rem)}</span>'
+                f'</div>'
+            )
+        # Also render any flags that have no paired remediation (e.g. ✅ flags)
+        flags_list = f.get("flags", [])
+        rems_list = f.get("remediations", [])
+        for flag in flags_list[len(rems_list):]:
+            flag_items.append(f'<div class="flag-item"><span class="flag-text">{html.escape(flag)}</span></div>')
+        flags_html = "".join(flag_items) or "None"
         policy_html = "<br>".join(html.escape(pf) for pf in f.get("policy_findings", [])) or "None"
         public_badge = '<span style="background:#c0392b;color:white;padding:1px 6px;border-radius:3px">PUBLIC</span>' if f["is_public"] else '<span style="background:#27ae60;color:white;padding:1px 6px;border-radius:3px">PRIVATE</span>'
         _enc_raw = f.get("encryption_algorithm") or ""
@@ -352,6 +378,9 @@ def write_html(report, path):
   tr:last-child td {{ border-bottom: none; }}
   tr:hover td {{ background: #f8f9ff; }}
   .footer {{ text-align: center; padding: 20px; color: #999; font-size: 0.85em; }}
+  .flag-item {{ margin-bottom: 6px; }}
+  .flag-text {{ display: block; font-size: 0.85em; }}
+  .rem-text {{ display: block; font-size: 0.78em; color: #555; padding-left: 12px; font-style: italic; }}
 </style>
 </head>
 <body>
