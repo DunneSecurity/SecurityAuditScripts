@@ -5,7 +5,7 @@ Reads JSON output files from AWS and Azure auditor scripts and generates
 a single executive-facing HTML report.
 
 Score algorithm (100 − weighted deductions):
-  CRITICAL = -8 pts, HIGH = -4 pts, MEDIUM = -2 pts, LOW = -0.5 pts
+  CRITICAL = -20 pts, HIGH = -10 pts, MEDIUM = -4 pts, LOW = -1 pt
 """
 import json
 import os
@@ -15,7 +15,6 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger(__name__)
 
 # Known report filename patterns (auto-discovered)
@@ -333,8 +332,7 @@ def run(input_dir=".", output_path="exec_summary.html", top_n=10, max_wins=10):
         stats = compute_pillar_stats(pillar_name, report)
         pillar_stats_list.append(stats)
         for f in report.get("findings", []):
-            f["pillar"] = pillar_name
-            all_findings_flat.append(f)
+            all_findings_flat.append({**f, "pillar": pillar_name})
         log.info(f"Loaded {pillar_name}: {stats['total']} findings "
                  f"(CRITICAL={stats['critical']} HIGH={stats['high']})")
 
@@ -371,6 +369,7 @@ def main():
     parser.add_argument("--max-wins", type=int, default=10,
                         help="Max quick wins to show (default: 10)")
     args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     run(input_dir=args.input_dir, output_path=args.output,
         top_n=args.top_n, max_wins=args.max_wins)
 
