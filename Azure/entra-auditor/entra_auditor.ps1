@@ -110,7 +110,7 @@ function Get-EntraFindings {
                     PrincipalName    = $user.UserPrincipalName
                     Score            = 7
                     Severity         = (Get-SeverityLabel 7)
-                    Recommendation   = "Enable MFA for user '$($user.UserPrincipalName)'. Use Conditional Access policies to enforce MFA for all users."
+                    Recommendation   = "Enable MFA: Azure Portal → Microsoft Entra ID → Users → $($user.UserPrincipalName) → Authentication methods → add Microsoft Authenticator or FIDO2 key. Or enforce via Conditional Access: Entra → Security → Conditional Access → New policy → require MFA for All users"
                 })
             }
         } catch {
@@ -140,7 +140,7 @@ function Get-EntraFindings {
                     RoleName         = $assignment.RoleDefinitionName
                     Score            = 7
                     Severity         = (Get-SeverityLabel 7)
-                    Recommendation   = "Remove privileged role '$($assignment.RoleDefinitionName)' from guest user '$($guest.UserPrincipalName)'. Guest accounts should have minimal permissions."
+                    Recommendation   = "Remove privileged role from guest: Azure Portal → Microsoft Entra ID → Users → $($guest.UserPrincipalName) → Assigned roles → remove privileged roles. Guest accounts should not hold Global Administrator, User Administrator, or equivalent roles"
                 })
             }
         }
@@ -168,7 +168,7 @@ function Get-EntraFindings {
             RoleName         = $spAssignment.RoleDefinitionName
             Score            = 5
             Severity         = (Get-SeverityLabel 5)
-            Recommendation   = "Replace broad '$($spAssignment.RoleDefinitionName)' role with a least-privilege custom role scoped to specific resource groups or resources."
+            Recommendation   = "Reduce service principal permissions: Azure Portal → Subscriptions → [subscription] → Access control (IAM) → Role assignments → find service principal → change to least-privilege role scoped to a resource group, not the subscription"
         })
     }
 
@@ -193,7 +193,7 @@ function Get-EntraFindings {
                         EndDate          = $cred.EndDateTime
                         Score            = 5
                         Severity         = (Get-SeverityLabel 5)
-                        Recommendation   = "Rotate or remove the stale credential (KeyId: $($cred.KeyId)) for app '$($app.DisplayName)'. Use managed identities where possible to avoid credential management."
+                        Recommendation   = "Rotate or remove stale credential: Azure Portal → Microsoft Entra ID → App registrations → $($app.DisplayName) → Certificates & secrets → delete expired certificates/secrets → add new short-lived secret (max 1 year) or certificate"
                     })
                 }
             }
@@ -219,7 +219,7 @@ function Get-EntraFindings {
                 DangerousActions = ($dangerousActions -join ', ')
                 Score            = 6
                 Severity         = (Get-SeverityLabel 6)
-                Recommendation   = "Review and restrict custom role '$($role.Name)'. Replace wildcard write/delete actions with specific resource actions following least-privilege principles."
+                Recommendation   = "Restrict custom role actions: Azure Portal → Microsoft Entra ID → Roles and administrators → $($role.Name) → Edit → remove write/delete actions that are not required → Save"
             })
         }
     }
@@ -251,7 +251,7 @@ function Get-PrivescFindings {
                 Combo            = 'User Access Administrator + Contributor'
                 Score            = 9
                 Severity         = 'CRITICAL'
-                Recommendation   = 'Remove one of the conflicting roles or restrict scope'
+                Recommendation   = 'Remove the escalation path: the role or permission assignment allows the principal to elevate their own privileges. Review and remove: Microsoft.Authorization/roleAssignments/write, Microsoft.Authorization/policyAssignments/write, or Microsoft.Compute/virtualMachines/runCommand/action from the assigned role.'
             })
         }
 
@@ -265,7 +265,7 @@ function Get-PrivescFindings {
                 Combo            = 'Managed Identity Contributor + Contributor'
                 Score            = 9
                 Severity         = 'CRITICAL'
-                Recommendation   = 'Remove one of the conflicting roles or restrict scope'
+                Recommendation   = 'Remove the escalation path: the role or permission assignment allows the principal to elevate their own privileges. Review and remove: Microsoft.Authorization/roleAssignments/write, Microsoft.Authorization/policyAssignments/write, or Microsoft.Compute/virtualMachines/runCommand/action from the assigned role.'
             })
         }
 
@@ -279,7 +279,7 @@ function Get-PrivescFindings {
                 Combo            = 'Role Based Access Control Administrator'
                 Score            = 9
                 Severity         = 'CRITICAL'
-                Recommendation   = 'Remove one of the conflicting roles or restrict scope'
+                Recommendation   = 'Remove the escalation path: the role or permission assignment allows the principal to elevate their own privileges. Review and remove: Microsoft.Authorization/roleAssignments/write, Microsoft.Authorization/policyAssignments/write, or Microsoft.Compute/virtualMachines/runCommand/action from the assigned role.'
             })
         }
 
@@ -296,7 +296,7 @@ function Get-PrivescFindings {
                 Combo            = 'Owner assigned to unmonitored service principal'
                 Score            = 9
                 Severity         = 'CRITICAL'
-                Recommendation   = 'Audit this service principal and apply ownership tagging or remove Owner role'
+                Recommendation   = 'Remove the escalation path: the role or permission assignment allows the principal to elevate their own privileges. Review and remove: Microsoft.Authorization/roleAssignments/write, Microsoft.Authorization/policyAssignments/write, or Microsoft.Compute/virtualMachines/runCommand/action from the assigned role.'
             })
         }
 
@@ -314,7 +314,7 @@ function Get-PrivescFindings {
                         Combo            = 'Role with Microsoft.Authorization/*/write + Contributor'
                         Score            = 9
                         Severity         = 'CRITICAL'
-                        Recommendation   = 'Remove the role with write authorization permissions or the Contributor role'
+                        Recommendation   = 'Remove the escalation path: the role or permission assignment allows the principal to elevate their own privileges. Review and remove: Microsoft.Authorization/roleAssignments/write, Microsoft.Authorization/policyAssignments/write, or Microsoft.Compute/virtualMachines/runCommand/action from the assigned role.'
                     })
                     break
                 }
@@ -348,7 +348,7 @@ function ConvertTo-HtmlReport {
             <td>$([System.Web.HttpUtility]::HtmlEncode($finding))</td>
             <td>$([System.Web.HttpUtility]::HtmlEncode($resource)) — $([System.Web.HttpUtility]::HtmlEncode($detail))</td>
             <td><span style='background:$colour;color:#fff;padding:2px 6px;border-radius:3px;font-weight:bold'>$($f.Severity)</span></td>
-            <td>$([System.Web.HttpUtility]::HtmlEncode($f.Recommendation))</td>
+            <td><div class='rem-text'>&#8627; $([System.Web.HttpUtility]::HtmlEncode($f.Recommendation))</div></td>
         </tr>"
     }
 
@@ -364,6 +364,7 @@ function ConvertTo-HtmlReport {
   th{background:#343a40;color:#fff;padding:10px;text-align:left}
   td{padding:8px 10px;border-bottom:1px solid #dee2e6}tr:hover{background:#f1f3f5}
   .meta{color:#666;font-size:.85em;margin-bottom:16px}
+  .rem-text { display: block; font-size: 0.78em; color: #555; padding-left: 12px; font-style: italic; margin-top: 4px; }
 </style></head><body>
 <h1>Entra ID &amp; RBAC Audit Report</h1>
 <p class='meta'>Tenant: $TenantId &nbsp;|&nbsp; Generated: $ScannedAt</p>

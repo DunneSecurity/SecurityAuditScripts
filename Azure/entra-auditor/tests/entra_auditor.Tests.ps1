@@ -38,6 +38,7 @@ Describe 'Get-EntraFindings' {
         $finding = $findings | Where-Object { $_.FindingType -eq 'UserNoMfa' -and $_.PrincipalName -eq 'test@contoso.com' }
         $finding | Should -Not -BeNullOrEmpty
         $finding.Severity | Should -Be 'HIGH'
+        $finding.Recommendation | Should -Match 'Azure Portal'
     }
 
     It 'flags guest user with Owner role assignment' {
@@ -64,6 +65,7 @@ Describe 'Get-EntraFindings' {
         $finding = $findings | Where-Object { $_.FindingType -eq 'PrivilegedGuest' }
         $finding | Should -Not -BeNullOrEmpty
         $finding.Severity | Should -BeIn @('HIGH', 'CRITICAL')
+        $finding.Recommendation | Should -Match 'Azure Portal'
     }
 
     It 'flags app registration with stale secret (>90 days old)' {
@@ -85,6 +87,7 @@ Describe 'Get-EntraFindings' {
         $findings = Get-EntraFindings -Subscription $sub
         $finding = $findings | Where-Object { $_.FindingType -eq 'StaleAppCredential' -and $_.PrincipalName -eq 'OldApp' }
         $finding | Should -Not -BeNullOrEmpty
+        $finding.Recommendation | Should -Match 'Azure Portal'
     }
 
     It 'does not flag user with MFA registered' {
@@ -129,6 +132,7 @@ Describe 'Get-EntraFindings' {
         $findings = Get-EntraFindings -Subscription $sub
         $finding = $findings | Where-Object { $_.FindingType -eq 'OverpermissiveCustomRole' }
         $finding | Should -Not -BeNullOrEmpty
+        $finding.Recommendation | Should -Match 'Azure Portal'
     }
 }
 
