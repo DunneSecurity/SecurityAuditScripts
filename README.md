@@ -21,7 +21,10 @@ SecurityAuditScripts/
 │   ├── sg-auditor/                 # Security group open ports and ingress rules
 │   ├── root-auditor/               # Root account MFA, access keys, password policy
 │   ├── ec2-auditor/                # EC2 IMDS v2, EBS encryption, public IPs, snapshots
-│   └── rds-auditor/                # RDS public access, encryption, backups, multi-AZ
+│   ├── rds-auditor/                # RDS public access, encryption, backups, multi-AZ
+│   ├── guardduty-auditor/          # GuardDuty enablement, findings, protection plans
+│   ├── vpcflowlogs-auditor/        # VPC flow log coverage, traffic type, retention
+│   └── lambda-auditor/             # Lambda public URLs, IAM roles, secret env vars
 ├── tools/
 │   └── exec_summary.py             # Cross-cloud executive summary report (aggregates all JSON reports)
 ├── Azure/
@@ -30,7 +33,8 @@ SecurityAuditScripts/
 │   ├── storage-auditor/            # Storage account public access, encryption, soft delete
 │   ├── activitylog-auditor/        # Activity Log diagnostic settings and alerting
 │   ├── nsg-auditor/                # NSG open ports, orphaned groups
-│   └── subscription-auditor/       # Defender for Cloud, PIM, Global Admin hygiene
+│   ├── subscription-auditor/       # Defender for Cloud, PIM, Global Admin hygiene
+│   └── keyvault-auditor/           # Key Vault RBAC, soft delete, secret/cert/key expiry
 └── OnPrem/
     ├── README.md
     ├── Windows/
@@ -57,6 +61,9 @@ SecurityAuditScripts/
 | [Root Account Auditor](./AWS/root-auditor/) | Audits root account security posture including MFA, access keys, password policy, and alternate contacts. | JSON, CSV, HTML |
 | [EC2 Auditor](./AWS/ec2-auditor/) | Audits EC2 instances across all regions for IMDSv2 enforcement, EBS encryption, public IPs, public snapshots, IAM instance profiles, and default VPC usage. | JSON, CSV, HTML |
 | [RDS Auditor](./AWS/rds-auditor/) | Audits RDS databases for public accessibility, storage encryption, backup retention, deletion protection, IAM authentication, and multi-AZ deployment. | JSON, CSV, HTML |
+| [GuardDuty Auditor](./AWS/guardduty-auditor/) | Checks GuardDuty enablement across all regions, active finding counts by severity, protection plan coverage (S3/EKS/Malware/RDS/Runtime), and findings export configuration. | JSON, CSV, HTML |
+| [VPC Flow Logs Auditor](./AWS/vpcflowlogs-auditor/) | Audits VPC flow log coverage per VPC per region. Flags missing logs (CRITICAL), ACCEPT/REJECT-only logs, default log format, and short CloudWatch retention periods. | JSON, CSV, HTML |
+| [Lambda Auditor](./AWS/lambda-auditor/) | Audits Lambda functions for public function URLs with no auth, overly-permissive IAM roles, secrets in environment variable names, deprecated runtimes, missing DLQs, and X-Ray tracing. | JSON, CSV, HTML |
 
 ### Cross-Cloud
 
@@ -73,6 +80,7 @@ SecurityAuditScripts/
 | [Activity Log Auditor](./Azure/activitylog-auditor/) | Checks Activity Log diagnostic settings for coverage, retention, missing categories, and alerting gaps. | JSON, CSV, HTML |
 | [NSG Auditor](./Azure/nsg-auditor/) | Scans Network Security Groups for dangerous open ports, internet-exposed rules, and orphaned groups. | JSON, CSV, HTML |
 | [Subscription Auditor](./Azure/subscription-auditor/) | Audits subscription posture including Defender for Cloud, permanent privileged roles, Global Admin hygiene, and budget alerts. | JSON, CSV, HTML |
+| [Key Vault Auditor](./Azure/keyvault-auditor/) | Audits Key Vaults for RBAC vs legacy access policy, purge protection, soft delete, diagnostic logging, and expired or expiring secrets, certificates, and keys. | JSON, CSV, HTML |
 
 ### On-Premises
 
@@ -113,7 +121,7 @@ Authentication order:
 
 ```powershell
 # Install core Az modules
-Install-Module Az.Accounts, Az.Resources, Az.Network, Az.Storage, Az.Monitor, Az.Security -Scope CurrentUser
+Install-Module Az.Accounts, Az.Resources, Az.Network, Az.Storage, Az.Monitor, Az.Security, Az.KeyVault -Scope CurrentUser
 
 # Install Graph modules (required by entra-auditor and subscription-auditor)
 Install-Module Microsoft.Graph.Authentication, Microsoft.Graph.Users, Microsoft.Graph.Identity.Governance -Scope CurrentUser

@@ -7,7 +7,7 @@ of the AWS audit scripts in this repository.
 
 ```powershell
 # Install Az modules
-Install-Module Az.Accounts, Az.Resources, Az.Network, Az.Storage, Az.Monitor, Az.Security -Scope CurrentUser
+Install-Module Az.Accounts, Az.Resources, Az.Network, Az.Storage, Az.Monitor, Az.Security, Az.KeyVault -Scope CurrentUser
 
 # Install Graph modules (required by entra_auditor and subscription_auditor)
 Install-Module Microsoft.Graph.Authentication, Microsoft.Graph.Users, Microsoft.Graph.Identity.Governance -Scope CurrentUser
@@ -27,6 +27,7 @@ Connect-MgGraph -Scopes "UserAuthenticationMethod.Read.All","RoleManagement.Read
 | `activitylog-auditor/activitylog_auditor.ps1` | Diagnostic Settings / Activity Logs | cloudtrail-auditor |
 | `subscription-auditor/subscription_auditor.ps1` | Subscriptions & Tenant Posture | root-auditor |
 | `entra-auditor/entra_auditor.ps1` | Entra ID & RBAC | iam-privilege-mapper |
+| `keyvault-auditor/keyvault_auditor.ps1` | Key Vault secrets, certs & keys | — |
 
 ## Usage
 
