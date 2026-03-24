@@ -5,7 +5,12 @@ Reads JSON output files from AWS and Azure auditor scripts and generates
 a single executive-facing HTML report.
 
 Score algorithm (100 − weighted deductions):
-  CRITICAL = -20 pts, HIGH = -10 pts, MEDIUM = -4 pts, LOW = -1 pt
+  CRITICAL = -8 pts, HIGH = -4 pts, MEDIUM = -2 pts, LOW = -0.5 pts
+
+Weights are calibrated for SMB environments where first-time assessments
+typically produce 10–20 CRITICAL findings.  At -8 pts/CRITICAL a client
+needs 13 CRITICALs to reach score 0 — enough to show real severity without
+making every first-time client read an identical "F / 0" score.
 """
 import json
 import os
@@ -123,17 +128,20 @@ def compute_pillar_stats(pillar_name, report):
 def compute_overall_score(pillar_stats_list):
     """
     Compute 0-100 security score and letter grade.
-    Deductions: CRITICAL=-20, HIGH=-10, MEDIUM=-4, LOW=-1
+    Deductions: CRITICAL=-8, HIGH=-4, MEDIUM=-2, LOW=-0.5
+
+    Calibrated for SMB environments: a client needs 13 CRITICALs to reach
+    score 0, giving meaningful differentiation between first-time assessments.
     """
     if not pillar_stats_list:
         return 100, "A"
 
     deductions = 0
     for stats in pillar_stats_list:
-        deductions += stats.get("critical", 0) * 20
-        deductions += stats.get("high", 0) * 10
-        deductions += stats.get("medium", 0) * 4
-        deductions += stats.get("low", 0) * 1
+        deductions += stats.get("critical", 0) * 8
+        deductions += stats.get("high", 0) * 4
+        deductions += stats.get("medium", 0) * 2
+        deductions += stats.get("low", 0) * 0.5
 
     score = max(0, min(100, 100 - deductions))
 

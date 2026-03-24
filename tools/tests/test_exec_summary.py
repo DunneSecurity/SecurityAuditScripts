@@ -125,12 +125,23 @@ def test_compute_overall_score_no_findings():
 
 
 def test_compute_overall_score_all_critical():
+    # 3 CRITICALs × 8 pts = 24 deducted → score 76 (calibrated for SMB environments)
     pillar_stats = [
         {"critical": 3, "high": 0, "medium": 0, "low": 0, "total": 3, "pillar_risk": "CRITICAL"},
     ]
     score, grade = es.compute_overall_score(pillar_stats)
-    assert score < 50
-    assert grade in ("D", "F")
+    assert score == 76.0
+    assert grade == "B"
+
+
+def test_compute_overall_score_severe_is_f():
+    # 13 CRITICALs × 8 = 104 → clamped to 0 → F
+    pillar_stats = [
+        {"critical": 13, "high": 0, "medium": 0, "low": 0, "total": 13, "pillar_risk": "CRITICAL"},
+    ]
+    score, grade = es.compute_overall_score(pillar_stats)
+    assert score == 0
+    assert grade == "F"
 
 
 def test_compute_overall_score_mixed():
