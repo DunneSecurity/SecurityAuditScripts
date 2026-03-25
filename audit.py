@@ -38,6 +38,7 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 from rich.table import Table
+from rich.text import Text
 
 log = logging.getLogger(__name__)
 console = Console()
@@ -462,6 +463,42 @@ def print_summary(results: List[AuditorResult], html_path: Optional[Path]) -> No
         console.print(f"\n[yellow]Executive summary not generated (check logs)[/yellow]")
 
 
+# ── Startup banner ───────────────────────────────────────────────────────────
+
+def print_banner() -> None:
+    """Print ASCII art startup banner with capability summary."""
+    art = Text(justify="left")
+    art.append("  ███████╗███████╗ ██████╗ \n", style="bold red")
+    art.append("  ██╔════╝██╔════╝██╔════╝\n", style="bold red")
+    art.append("  ███████╗█████╗  ██║     \n", style="bold red")
+    art.append("  ╚════██║██╔══╝  ██║     \n", style="bold red")
+    art.append("  ███████║███████╗╚██████╗\n", style="bold red")
+    art.append("  ╚══════╝╚══════╝ ╚═════╝", style="bold red")
+
+    info = Text(justify="left")
+    info.append("SECURITY AUDIT ORCHESTRATOR\n", style="bold white")
+    info.append("─" * 31 + "\n", style="dim")
+    info.append("  AWS    ", style="bold yellow")
+    info.append("13 auditors   S3 · EC2 · IAM · KMS…\n")
+    info.append("  Linux  ", style="bold green")
+    info.append(" 4 auditors   users · fw · sysctl · patch\n")
+    info.append("  Azure  ", style="bold cyan")
+    info.append(" 7 PS1 scripts keyvault · nsg · defender…\n")
+    info.append("─" * 31 + "\n", style="dim")
+    info.append("  Parallel execution  ·  Rich progress UI\n", style="dim")
+    info.append("  JSON + HTML reports ·  Executive summary", style="dim")
+
+    grid = Table.grid(padding=(0, 3))
+    grid.add_column(no_wrap=True)
+    grid.add_column(no_wrap=True)
+    grid.add_row(art, info)
+
+    console.print(
+        Panel(grid, box=box.DOUBLE_EDGE, border_style="bold red", padding=(1, 2))
+    )
+    console.print()
+
+
 # ── Windows / Azure PS1 instructions ─────────────────────────────────────────
 
 def print_windows_instructions(client_dir: Path) -> None:
@@ -491,6 +528,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
 
     args = parse_args(argv)
+    print_banner()
     selected, show_ps1 = select_auditors(args)
 
     if not selected and not show_ps1:
