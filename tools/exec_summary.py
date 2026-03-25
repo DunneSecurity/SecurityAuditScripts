@@ -59,6 +59,8 @@ KNOWN_PATTERNS = [
     "elb_report.json",
     # Additional Azure
     "defender_report.json",
+    # Email security
+    "email_report.json",
 ]
 
 # Human-readable names for display
@@ -93,6 +95,7 @@ PILLAR_LABELS = {
     "kms": "AWS KMS Keys",
     "elb": "Load Balancers",
     "defender": "Defender for Cloud",
+    "email": "Email Security (SPF/DKIM/DMARC)",
 }
 
 GRADE_COLOURS = {
