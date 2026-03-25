@@ -181,3 +181,112 @@ def check_spf(domain: str) -> list:
         ))
 
     return findings
+
+
+# ── DKIM checks ───────────────────────────────────────────────────────────────
+
+def _probe_dkim(domain: str, selector: str) -> Optional[str]:
+    """Return the DKIM TXT record string for selector._domainkey.domain, or None."""
+    name = f"{selector}._domainkey.{domain}"
+    txts = query_txt(name)
+    if not txts:
+        return None
+    for t in txts:
+        if 'v=DKIM1' in t or 'k=rsa' in t or 'p=' in t:
+            return t
+    return None
+
+
+def _parse_dkim_key_bits(p_value: str) -> Optional[int]:
+    """
+    Approximate RSA key strength from DER-encoded public key length.
+    Returns an approximate bit count, or None if the key cannot be decoded.
+
+    DER length thresholds (PKCS#1 SubjectPublicKeyInfo encoding):
+      512-bit  ->  ~74-90 bytes
+      1024-bit ->  ~140-162 bytes
+      2048-bit ->  ~270-294 bytes
+
+    We use length >= 140 as the 1024-bit pass threshold to avoid
+    misclassifying legitimate 1024-bit keys.
+    """
+    try:
+        der = base64.b64decode(p_value)
+        # Map DER byte length to approximate bit strength
+        if len(der) >= 256:
+            return 2048
+        elif len(der) >= 140:
+            return 1024
+        else:
+            return 512
+    except Exception:
+        return None
+
+
+def check_dkim(domain: str, selector: Optional[str]) -> list:
+    """DKIM-01, DKIM-02: record existence and key strength."""
+    # Build probe order: provided selector first, then standard list
+    probes = []
+    if selector:
+        probes.append(selector)
+    probes.extend(s for s in DKIM_SELECTORS if s != selector)
+
+    found_record = None
+    found_selector = None
+
+    for sel in probes:
+        record = _probe_dkim(domain, sel)
+        if record is not None:
+            found_record = record
+            found_selector = sel
+            break
+
+    if found_record is None:
+        return [_finding(
+            "DKIM-01", "DKIM Record Exists", "FAIL", "HIGH", 4,
+            f"No DKIM record found for {domain} (probed {len(probes)} selectors)",
+            "Configure DKIM signing with your email provider and publish the public key "
+            "as a TXT record at <selector>._domainkey." + domain,
+        )]
+
+    # Extract p= value
+    p_match = re.search(r'p=([^;\s]*)', found_record)
+    p_value = p_match.group(1).strip() if p_match else ''
+
+    if not p_value:
+        return [_finding(
+            "DKIM-01", "DKIM Record Exists", "FAIL", "HIGH", 4,
+            f"DKIM record found at {found_selector}._domainkey.{domain} but key is empty (revoked)",
+            "Generate a new DKIM key pair and publish the new public key. "
+            "Rotate the signing key in your mail provider settings.",
+        )]
+
+    dkim01 = _finding(
+        "DKIM-01", "DKIM Record Exists", "PASS", "HIGH", 0,
+        f"DKIM record found at {found_selector}._domainkey.{domain}",
+        "",
+    )
+    dkim01["dkim_selector_used"] = found_selector
+
+    # DKIM-02: key strength
+    bits = _parse_dkim_key_bits(p_value)
+    if bits is None:
+        dkim02 = _finding(
+            "DKIM-02", "DKIM Key Strength", "WARN", "MEDIUM", 0,
+            "DKIM key format could not be decoded — key length undetectable",
+            "Verify your DKIM key is at least 1024 bits (2048 recommended) with your mail provider.",
+        )
+    elif bits < 1024:
+        dkim02 = _finding(
+            "DKIM-02", "DKIM Key Strength", "FAIL", "MEDIUM", 2,
+            f"DKIM key appears to be approximately {bits} bits — below the 1024-bit minimum",
+            "Generate a new 2048-bit DKIM key pair and update your DNS record.",
+        )
+    else:
+        dkim02 = _finding(
+            "DKIM-02", "DKIM Key Strength", "PASS", "MEDIUM", 0,
+            f"DKIM key length appears adequate (≥1024 bits)",
+            "",
+        )
+
+    return [dkim01, dkim02]

@@ -169,3 +169,79 @@ def test_spf_dns_error_warn():
         findings = esa.check_spf('example.com')
     spf01 = next(f for f in findings if f['check_id'] == 'SPF-01')
     assert spf01['status'] == 'WARN'
+
+
+# ── DKIM check tests ──────────────────────────────────────────────────────────
+
+# A minimal valid RSA-1024 public key in base64 (real key, 1024-bit)
+_VALID_1024_KEY = (
+    "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC2a1TM2f9j6LLgHp7e"
+    "jLxR6HGkZq4K7b8G5pT1ZpViVqK9pAXFJxQR5V7Ukg0VdW9cFbbXWJDr"
+    "ZsD6oZHuFqxGQpBOdN+m6FQsBMrqJIB/ZRlCTkbWpX3pR2hWzxFd0KhB"
+    "XkT0c1tCgY0AiBnZM1c3FGcQa4M3bPNnYCrLbwIDAQAB"
+)
+
+# A 512-bit key (too short)
+_SHORT_KEY = base64.b64encode(b'\x00' * 64).decode()
+
+
+def test_dkim_found_on_provided_selector():
+    """DKIM found on provided selector → DKIM-01 PASS."""
+    txt = f'v=DKIM1; k=rsa; p={_VALID_1024_KEY}'
+    with patch.object(esa, 'query_txt', return_value=[txt]):
+        findings = esa.check_dkim('example.com', selector='google')
+    dkim01 = next(f for f in findings if f['check_id'] == 'DKIM-01')
+    assert dkim01['status'] == 'PASS'
+
+
+def test_dkim_found_on_fallback_selector():
+    """DKIM not found on custom selector, found on selector1 fallback."""
+    txt = f'v=DKIM1; k=rsa; p={_VALID_1024_KEY}'
+
+    def fake_query(name):
+        if 'selector1' in name:
+            return [txt]
+        return []
+
+    with patch.object(esa, 'query_txt', side_effect=fake_query):
+        findings = esa.check_dkim('example.com', selector='customselector')
+    dkim01 = next(f for f in findings if f['check_id'] == 'DKIM-01')
+    assert dkim01['status'] == 'PASS'
+    assert 'selector1' in dkim01['detail']
+
+
+def test_dkim_not_found():
+    """No DKIM record on any selector → DKIM-01 FAIL HIGH, DKIM-02 absent."""
+    with patch.object(esa, 'query_txt', return_value=[]):
+        findings = esa.check_dkim('example.com', selector=None)
+    dkim01 = next(f for f in findings if f['check_id'] == 'DKIM-01')
+    assert dkim01['status'] == 'FAIL'
+    assert dkim01['risk_level'] == 'HIGH'
+    assert not any(f['check_id'] == 'DKIM-02' for f in findings)
+
+
+def test_dkim_empty_p_revoked():
+    """DKIM record with empty p= (revoked key) → DKIM-01 FAIL."""
+    with patch.object(esa, 'query_txt', return_value=['v=DKIM1; k=rsa; p=']):
+        findings = esa.check_dkim('example.com', selector='default')
+    dkim01 = next(f for f in findings if f['check_id'] == 'DKIM-01')
+    assert dkim01['status'] == 'FAIL'
+    assert 'revoked' in dkim01['detail'].lower()
+
+
+def test_dkim_undecodable_p_warn():
+    """DKIM with p= that can't be decoded → DKIM-02 WARN."""
+    with patch.object(esa, 'query_txt', return_value=['v=DKIM1; k=rsa; p=notvalidbase64!!!']):
+        findings = esa.check_dkim('example.com', selector='default')
+    dkim02 = next((f for f in findings if f['check_id'] == 'DKIM-02'), None)
+    assert dkim02 is not None
+    assert dkim02['status'] == 'WARN'
+
+
+def test_dkim02_absent_when_dkim01_fails():
+    """DKIM-02 is omitted from findings when DKIM-01 fails (no record found)."""
+    with patch.object(esa, 'query_txt', return_value=[]):
+        findings = esa.check_dkim('example.com', selector=None)
+    check_ids = [f['check_id'] for f in findings]
+    assert 'DKIM-01' in check_ids
+    assert 'DKIM-02' not in check_ids
