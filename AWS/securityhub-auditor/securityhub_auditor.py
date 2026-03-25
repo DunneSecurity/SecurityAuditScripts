@@ -60,7 +60,13 @@ def is_hub_enabled(sh):
         return True
     except ClientError as e:
         code = e.response["Error"]["Code"]
-        if code in ("InvalidAccessException", "AccessDeniedException"):
+        if code in (
+            "InvalidAccessException",
+            "AccessDeniedException",
+            "UnrecognizedClientException",  # opt-in region not enabled for account
+            "InvalidClientTokenId",         # token not valid in this region
+            "AuthFailure",                  # credentials not valid in region
+        ):
             return False
         raise
 
