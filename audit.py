@@ -56,6 +56,7 @@ class AuditorDef:
     script: Path          # Absolute path to the .py file
     output_prefix: str    # Default output filename prefix passed as --output
     supports_regions: bool = False  # Whether the script accepts --regions
+    requires_domain: bool = False   # Whether the script requires --domain
 
 
 AUDITOR_MAP: Dict[str, AuditorDef] = {
@@ -78,6 +79,13 @@ AUDITOR_MAP: Dict[str, AuditorDef] = {
     "linux_firewall": AuditorDef(REPO_ROOT / "OnPrem/Linux/linux-firewall-auditor/linux_firewall_auditor.py", "fw_report",     False),
     "linux_sysctl":   AuditorDef(REPO_ROOT / "OnPrem/Linux/linux-sysctl-auditor/linux_sysctl_auditor.py",     "sysctl_report", False),
     "linux_patch":    AuditorDef(REPO_ROOT / "OnPrem/Linux/linux-patch-auditor/linux_patch_auditor.py",       "patch_report",  False),
+    # ── Email ─────────────────────────────────────────────────────────────────
+    "email": AuditorDef(
+        REPO_ROOT / "Email/email-security-auditor/email_security_auditor.py",
+        "email_report",
+        supports_regions=False,
+        requires_domain=True,
+    ),
 }
 
 AWS_GROUP: List[str] = [
@@ -158,6 +166,15 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
   Run these directly on the target Linux host (not your workstation).
 
+━━━ EMAIL AUDITOR (--email requires --domain) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  --email        SPF, DKIM, and DMARC DNS record validation
+                 Requires: --domain acme.ie
+                 No cloud credentials needed — DNS queries only
+
+  Example:
+    python3 audit.py --client "Acme Corp" --email --domain acme.ie
+
 ━━━ AZURE / WINDOWS (--azure or --windows) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   These are PowerShell scripts that must run on a Windows machine with the
@@ -202,6 +219,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     groups.add_argument("--azure",   action="store_true", help="Print Azure PS1 instructions (Windows-only scripts)")
     groups.add_argument("--windows", action="store_true", help="Print Windows PS1 instructions")
     groups.add_argument("--all",     action="store_true", help="Run all Python auditors + print PS1 instructions")
+    groups.add_argument("--email",   action="store_true", help="Run email security auditor (requires --domain)")
 
     # Individual AWS auditor flags
     _aws_help = {
@@ -238,6 +256,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     opts.add_argument("--client",  default="audit",      metavar="NAME", help="Client name for output folder (default: audit)")
     opts.add_argument("--output",  default="./reports/", metavar="DIR",  help="Base output directory (default: ./reports/)")
     opts.add_argument("--profile", default=None,         metavar="NAME", help="AWS CLI profile name")
+    opts.add_argument("--domain",  default=None, metavar="NAME", help="Domain for email security audit (e.g. acme.ie)")
     opts.add_argument("--regions", nargs="+",            metavar="REGION", help="AWS regions (passed to multi-region auditors)")
     opts.add_argument("--format",  default="all",        choices=["json", "html", "all"], help="Report format (default: all)")
     opts.add_argument("--workers", type=int, default=4,  metavar="N",    help="Parallel worker threads (default: 4)")
@@ -336,6 +355,9 @@ def build_cmd(name: str, defn: AuditorDef, client_dir: Path, args: argparse.Name
 
     if args.regions and defn.supports_regions:
         cmd += ["--regions"] + args.regions
+
+    if defn.requires_domain and args.domain:
+        cmd += ["--domain", args.domain]
 
     return cmd
 
@@ -536,6 +558,8 @@ def print_banner() -> None:
     info.append(" 4 auditors   users · fw · sysctl · patch\n")
     info.append("  Azure  ", style="bold cyan")
     info.append(" 7 PS1 scripts keyvault · nsg · defender…\n")
+    info.append("  Email  ", style="bold magenta")
+    info.append(" 1 auditor    SPF · DKIM · DMARC\n")
     info.append("─" * 31 + "\n", style="dim")
     info.append("  Parallel execution  ·  Rich progress UI\n", style="dim")
     info.append("  JSON + HTML reports ·  Executive summary", style="dim")
@@ -582,6 +606,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parse_args(argv)
     print_banner()
     selected, show_ps1 = select_auditors(args)
+
+    # Validate --email requires --domain
+    if "email" in selected and not args.domain:
+        console.print("[bold red]error:[/bold red] --email requires --domain (e.g. --domain acme.ie)")
+        return 1
 
     if not selected and not show_ps1:
         console.print(
