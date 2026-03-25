@@ -18,6 +18,9 @@ Python scripts for auditing AWS infrastructure security posture across all regio
 | [guardduty-auditor](./guardduty-auditor/) | GuardDuty | Detector enablement, finding counts by severity, protection plan coverage |
 | [vpcflowlogs-auditor](./vpcflowlogs-auditor/) | VPC | Flow log coverage per VPC, traffic type, CloudWatch retention |
 | [lambda-auditor](./lambda-auditor/) | Lambda | Public function URLs, IAM role permissions, secrets in env vars, deprecated runtimes |
+| [securityhub-auditor](./securityhub-auditor/) | Security Hub | Hub enablement across all regions, finding counts by severity, CIS/PCI/FSBP standard pass rates |
+| [kms-auditor](./kms-auditor/) | KMS | CMK rotation, key policy (public/wildcard access), key state, unaliased keys |
+| [elb-auditor](./elb-auditor/) | ELB | ALB/NLB access logging, deletion protection, HTTP→HTTPS redirect, TLS policy, WAF association |
 
 ---
 

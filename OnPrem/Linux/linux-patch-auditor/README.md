@@ -1,13 +1,17 @@
-# Linux Patch & Update Auditor
+# 🩹 Linux Patch & Update Auditor
 
 Audits package update status, kernel currency, and automatic update configuration on Linux systems.
 
-## Requirements
+---
+
+## ⚙️ Requirements
 
 - Python 3.7+
 - Run as root (`sudo`) for package manager commands that require elevated access (`apt-get -s upgrade`, `yum check-update`)
 
-## Usage
+---
+
+## 🚀 Usage
 
 ```bash
 # Full audit — writes patch_report.json, .csv, .html
@@ -20,14 +24,18 @@ sudo python3 linux_patch_auditor.py --format html --output patch_report
 sudo python3 linux_patch_auditor.py --format all
 ```
 
-## Arguments
+---
+
+## ✨ Arguments
 
 | Argument | Default | Description |
 |----------|---------|-------------|
 | `--output`, `-o` | `patch_report` | Output file prefix |
 | `--format`, `-f` | `all` | `json` \| `csv` \| `html` \| `all` \| `stdout` |
 
-## Checks
+---
+
+## 📋 Checks
 
 | Finding | Score | Severity | Description |
 |---------|-------|----------|-------------|
@@ -40,7 +48,9 @@ sudo python3 linux_patch_auditor.py --format all
 | `UpdatesAvailable` | 4 | MEDIUM | Non-security updates are pending (fewer than 50) |
 | `LastUpdateStale` | 5 | MEDIUM | Last successful update was more than 30 days ago |
 
-## Supported Package Managers
+---
+
+## 🐧 Supported Package Managers
 
 The auditor detects the package manager automatically at runtime.
 
@@ -51,7 +61,9 @@ The auditor detects the package manager automatically at runtime.
 | RHEL / CentOS 8+ / Fedora | `dnf` | `dnf-automatic` |
 | SUSE / openSUSE | `zypper` | `zypper` auto update timer |
 
-## Data Sources
+---
+
+## 🔍 Data Sources
 
 - `apt-get -s upgrade` / `yum check-update` / `dnf check-update` / `zypper list-updates` — pending updates
 - `/var/log/apt/history.log`, `/var/log/yum.log`, `/var/log/dnf.log`, `zypper log` — last update timestamps
@@ -59,7 +71,9 @@ The auditor detects the package manager automatically at runtime.
 - `uname -r` — running kernel version
 - Package manager query for available kernel packages — kernel update comparison
 
-## Output Files
+---
+
+## 📊 Output Files
 
 All files are created with owner-only permissions (mode 600).
 
@@ -67,10 +81,18 @@ All files are created with owner-only permissions (mode 600).
 - `patch_report.csv` — one row per finding
 - `patch_report.html` — colour-coded HTML summary
 
-## Running Tests
+---
+
+## 🧪 Running Tests
 
 ```bash
 # From repo root
 pip install pytest
 pytest OnPrem/Linux/linux-patch-auditor/tests/ -v
 ```
+
+---
+
+## ⚠️ Disclaimer
+
+For authorised internal security auditing only.

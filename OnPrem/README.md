@@ -17,7 +17,9 @@ OnPrem/
 │   └── bitlocker-auditor/    # BitLocker drive encryption status
 └── Linux/
     ├── linux-user-auditor/   # Linux users, sudo, SSH, and password policy
-    └── linux-firewall-auditor/ # iptables/nftables/ufw/firewalld + auditd/syslog
+    ├── linux-firewall-auditor/ # iptables/nftables/ufw/firewalld + auditd/syslog
+    ├── linux-sysctl-auditor/ # 24 CIS kernel parameters via sysctl
+    └── linux-patch-auditor/  # Available updates, auto-update agent, kernel version
 ```
 
 ---
@@ -34,6 +36,8 @@ OnPrem/
 | [bitlocker_auditor.ps1](./Windows/bitlocker-auditor/) | Windows | No | PowerShell |
 | [linux_user_auditor.py](./Linux/linux-user-auditor/) | Linux | No | Python |
 | [linux_firewall_auditor.py](./Linux/linux-firewall-auditor/) | Linux | No | Python |
+| [linux_sysctl_auditor.py](./Linux/linux-sysctl-auditor/) | Linux | No | Python |
+| [linux_patch_auditor.py](./Linux/linux-patch-auditor/) | Linux | No | Python |
 
 ---
 

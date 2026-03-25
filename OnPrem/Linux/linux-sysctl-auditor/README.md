@@ -1,13 +1,17 @@
-# Linux Sysctl Hardening Auditor
+# 🔧 Linux Sysctl Hardening Auditor
 
 Audits kernel security parameters via `sysctl` for CIS Benchmark compliance across network, TCP, kernel, and filesystem hardening pillars.
 
-## Requirements
+---
+
+## ⚙️ Requirements
 
 - Python 3.7+
 - Run as root (`sudo`) to read all sysctl values accurately
 
-## Usage
+---
+
+## 🚀 Usage
 
 ```bash
 # Full audit — writes sysctl_report.json, .csv, .html
@@ -17,17 +21,21 @@ sudo python3 linux_sysctl_auditor.py
 sudo python3 linux_sysctl_auditor.py --format html --output sysctl_report
 
 # All formats
-python3 linux_sysctl_auditor.py --format all
+sudo python3 linux_sysctl_auditor.py --format all
 ```
 
-## Arguments
+---
+
+## ✨ Arguments
 
 | Argument | Default | Description |
 |----------|---------|-------------|
 | `--output`, `-o` | `sysctl_report` | Output file prefix |
 | `--format`, `-f` | `all` | `json` \| `csv` \| `html` \| `all` \| `stdout` |
 
-## Checks
+---
+
+## 📋 Checks
 
 24 CIS Benchmark parameters checked across four pillars.
 
@@ -73,11 +81,9 @@ kernel.randomize_va_space = 2
 sysctl -p /etc/sysctl.d/99-hardening.conf
 ```
 
-## Data Sources
+---
 
-- `sysctl -n <param>` — reads live kernel parameter values from `/proc/sys`
-
-## Output Files
+## 📊 Output Files
 
 All files are created with owner-only permissions (mode 600).
 
@@ -85,10 +91,18 @@ All files are created with owner-only permissions (mode 600).
 - `sysctl_report.csv` — one row per parameter with compliance status and remediation
 - `sysctl_report.html` — colour-coded HTML summary with overall risk rating
 
-## Running Tests
+---
+
+## 🧪 Running Tests
 
 ```bash
 # From repo root
 pip install pytest
 pytest OnPrem/Linux/linux-sysctl-auditor/tests/ -v
 ```
+
+---
+
+## ⚠️ Disclaimer
+
+For authorised internal security auditing only.

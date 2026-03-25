@@ -37,6 +37,7 @@ graph TD
 
     AWS --> S["📊 exec_summary.py\nCross-cloud HTML report · Security score 0–100"]
     Linux --> S
+    Azure -.->|"JSON reports"| S
 ```
 
 ---

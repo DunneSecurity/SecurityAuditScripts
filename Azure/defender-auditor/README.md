@@ -1,10 +1,10 @@
-# Azure Defender for Cloud Auditor
+# 🛡️ Azure Defender for Cloud Auditor
 
 Audits Azure Defender for Cloud configuration across one or all subscriptions. Checks plan enablement per resource type, Secure Score, security contact configuration, and auto-provisioning of monitoring agents.
 
 ---
 
-## Features
+## ✨ Features
 
 - Defender plans — checks enablement status for VMs, SQL, App Service, Storage, Key Vault, DNS, ARM, Containers, OpenSourceRelational, and CSPM
 - Secure Score — retrieves current Secure Score for each subscription
@@ -15,7 +15,7 @@ Audits Azure Defender for Cloud configuration across one or all subscriptions. C
 
 ---
 
-## Requirements
+## ⚙️ Requirements
 
 - PowerShell 7+ (or Windows PowerShell 5.1)
 - Az PowerShell modules:
@@ -26,7 +26,7 @@ Audits Azure Defender for Cloud configuration across one or all subscriptions. C
 
 ---
 
-## Usage
+## 🚀 Usage
 
 ```powershell
 .\defender_auditor.ps1                                         # Audit current subscription, all formats
@@ -39,7 +39,7 @@ Audits Azure Defender for Cloud configuration across one or all subscriptions. C
 
 ---
 
-## Parameters
+## 📋 Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -49,7 +49,7 @@ Audits Azure Defender for Cloud configuration across one or all subscriptions. C
 
 ---
 
-## Risk Scoring
+## 📊 Risk Scoring
 
 | Factor | Score Impact |
 |--------|-------------|
@@ -70,7 +70,7 @@ Audits Azure Defender for Cloud configuration across one or all subscriptions. C
 
 ---
 
-## Output Fields
+## 📋 Output Fields
 
 Each finding (one per subscription or per misconfigured item) includes:
 
@@ -88,7 +88,7 @@ Each finding (one per subscription or per misconfigured item) includes:
 
 ---
 
-## Running Tests
+## 🧪 Running Tests
 
 ```powershell
 Invoke-Pester Azure/defender-auditor/tests/ -Output Detailed
@@ -98,6 +98,6 @@ Tests use Az module stubs — no real Azure connection required.
 
 ---
 
-## Disclaimer
+## ⚠️ Disclaimer
 
 For authorised internal security auditing only.

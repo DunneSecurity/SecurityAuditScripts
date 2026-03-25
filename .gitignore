@@ -9,6 +9,10 @@ docs/superpowers/
 # Audit output
 reports/
 *.log
+*_report.json
+*_report.csv
+*_report.html
+exec_summary.html
 
 # Secrets
 .env
