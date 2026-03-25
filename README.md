@@ -8,6 +8,69 @@ A collection of security auditing scripts for AWS, Azure, and on-premises infras
 
 ---
 
+## 🗺️ Architecture
+
+```mermaid
+graph TD
+    O["🎯 audit.py — Orchestrator\nRich progress UI · ThreadPoolExecutor · exec summary"]
+
+    subgraph AWS["☁️ AWS  —  13 auditors  (Python · boto3)"]
+        A["IAM · S3 · CloudTrail · SG · Root\nEC2 · RDS · GuardDuty · VPC Flow Logs\nLambda · Security Hub · KMS · ELB"]
+    end
+
+    subgraph Linux["🐧 Linux  —  4 auditors  (Python · sudo)"]
+        L["Users · Firewall · Sysctl · Patch"]
+    end
+
+    subgraph Azure["🔷 Azure  —  7 auditors  (PowerShell · Az module)"]
+        AZ["Entra · Storage · Activity Log · NSG\nSubscription · Key Vault · Defender"]
+    end
+
+    subgraph Windows["🪟 Windows  —  6 auditors  (PowerShell)"]
+        W["AD · Local Users · Firewall\nSMB Signing · Audit Policy · BitLocker"]
+    end
+
+    O -->|"--aws flag"| AWS
+    O -->|"--linux flag"| Linux
+    O -.->|"--windows: prints PS1 instructions"| Azure
+    O -.->|"--windows: prints PS1 instructions"| Windows
+
+    AWS --> S["📊 exec_summary.py\nCross-cloud HTML report · Security score 0–100"]
+    Linux --> S
+```
+
+---
+
+## 🎯 Audit Orchestrator
+
+`audit.py` runs any combination of Python auditors in parallel with a live Rich progress UI and generates an executive summary on completion.
+
+```bash
+# Full AWS + Linux audit for a client
+python3 audit.py --client "Acme Corp" --aws --linux --output ./reports/
+
+# Everything — AWS, Linux, plus Azure/Windows PS1 instructions
+python3 audit.py --client "Acme Corp" --all --profile prod
+
+# Multi-region AWS scan
+python3 audit.py --client "Acme Corp" --aws --regions eu-west-1 us-east-1
+
+# Cherry-pick specific auditors
+python3 audit.py --client "Acme Corp" --s3 --ec2 --iam --linux_user
+
+# Print Azure/Windows PS1 run instructions only
+python3 audit.py --client "Acme Corp" --windows
+
+# Open executive summary in browser when complete
+python3 audit.py --client "Acme Corp" --all --open
+```
+
+**Flags:** `--aws` (all 13 AWS) · `--linux` (all 4 Linux) · `--windows` (Azure/Windows PS1 guide) · `--all` (everything) · `--profile` · `--regions` · `--output` · `--format` · `--workers` · `--open`
+
+> **Prerequisites:** `pip install boto3 rich` · AWS credentials configured · Run with `sudo` for Linux auditors
+
+---
+
 ## 📁 Repository Structure
 
 ```
@@ -25,7 +88,9 @@ SecurityAuditScripts/
 │   ├── guardduty-auditor/          # GuardDuty enablement, findings, protection plans
 │   ├── vpcflowlogs-auditor/        # VPC flow log coverage, traffic type, retention
 │   ├── lambda-auditor/             # Lambda public URLs, IAM roles, secret env vars
-│   └── securityhub-auditor/        # Security Hub enablement, findings, standards
+│   ├── securityhub-auditor/        # Security Hub enablement, findings, standards
+│   ├── kms-auditor/                # KMS CMK rotation, key policy, state, aliases
+│   └── elb-auditor/                # ALB/NLB access logging, TLS policy, WAF, HTTPS
 ├── tools/
 │   └── exec_summary.py             # Cross-cloud executive summary report (aggregates all JSON reports)
 ├── Azure/
@@ -35,7 +100,8 @@ SecurityAuditScripts/
 │   ├── activitylog-auditor/        # Activity Log diagnostic settings and alerting
 │   ├── nsg-auditor/                # NSG open ports, orphaned groups
 │   ├── subscription-auditor/       # Defender for Cloud, PIM, Global Admin hygiene
-│   └── keyvault-auditor/           # Key Vault RBAC, soft delete, secret/cert/key expiry
+│   ├── keyvault-auditor/           # Key Vault RBAC, soft delete, secret/cert/key expiry
+│   └── defender-auditor/           # Defender for Cloud plans, secure score, contacts
 └── OnPrem/
     ├── README.md
     ├── Windows/
@@ -47,7 +113,9 @@ SecurityAuditScripts/
     │   └── bitlocker-auditor/      # BitLocker drive encryption status and method
     └── Linux/
         ├── linux-user-auditor/     # Users, sudo, SSH, password policy
-        └── linux-firewall-auditor/ # iptables/nftables/ufw/firewalld, auditd, syslog
+        ├── linux-firewall-auditor/ # iptables/nftables/ufw/firewalld, auditd, syslog
+        ├── linux-sysctl-auditor/   # Kernel hardening, 24 CIS sysctl parameters
+        └── linux-patch-auditor/    # Available updates, auto-update agent, kernel version
 ```
 
 ---
@@ -69,6 +137,8 @@ SecurityAuditScripts/
 | [VPC Flow Logs Auditor](./AWS/vpcflowlogs-auditor/) | Audits VPC flow log coverage per VPC per region. Flags missing logs (CRITICAL), ACCEPT/REJECT-only logs, default log format, and short CloudWatch retention periods. | JSON, CSV, HTML |
 | [Lambda Auditor](./AWS/lambda-auditor/) | Audits Lambda functions for public function URLs with no auth, overly-permissive IAM roles, secrets in environment variable names, deprecated runtimes, missing DLQs, and X-Ray tracing. | JSON, CSV, HTML |
 | [Security Hub Auditor](./AWS/securityhub-auditor/) | Checks Security Hub enablement across all regions, active finding counts by severity, and enabled compliance standards (CIS, PCI DSS, FSBP) with control pass rates. | JSON, CSV, HTML |
+| [KMS Auditor](./AWS/kms-auditor/) | Audits customer-managed KMS keys across all regions for disabled rotation, dangerous key policies (public/cross-account wildcard), key state, unaliased keys, and key spec. | JSON, CSV, HTML |
+| [ELB Auditor](./AWS/elb-auditor/) | Audits Application and Network Load Balancers for missing access logging, no deletion protection, HTTP→HTTPS redirect gaps (ALB), outdated TLS policies, and missing WAF association (ALB). | JSON, CSV, HTML |
 
 ### Cross-Cloud
 
@@ -86,6 +156,7 @@ SecurityAuditScripts/
 | [NSG Auditor](./Azure/nsg-auditor/) | Scans Network Security Groups for dangerous open ports, internet-exposed rules, and orphaned groups. | JSON, CSV, HTML |
 | [Subscription Auditor](./Azure/subscription-auditor/) | Audits subscription posture including Defender for Cloud, permanent privileged roles, Global Admin hygiene, and budget alerts. | JSON, CSV, HTML |
 | [Key Vault Auditor](./Azure/keyvault-auditor/) | Audits Key Vaults for RBAC vs legacy access policy, purge protection, soft delete, diagnostic logging, and expired or expiring secrets, certificates, and keys. | JSON, CSV, HTML |
+| [Defender Auditor](./Azure/defender-auditor/) | Audits Defender for Cloud plan enablement per resource type, secure score, security contacts, and auto-provisioning of monitoring agents. Supports all subscriptions. | JSON, CSV, HTML |
 
 ### On-Premises
 
@@ -96,6 +167,8 @@ SecurityAuditScripts/
 | [Windows Firewall Auditor](./OnPrem/Windows/winfirewall-auditor/) | Audits Windows Firewall profiles and rules for disabled profiles, default-allow policies, and dangerous ports open to any source. | JSON, CSV, HTML |
 | [Linux User Auditor](./OnPrem/Linux/linux-user-auditor/) | Audits Linux user accounts, sudo rules, SSH configuration, password policy from login.defs, and stale accounts. | JSON, CSV, HTML |
 | [Linux Firewall Auditor](./OnPrem/Linux/linux-firewall-auditor/) | Auto-detects and audits iptables/nftables/ufw/firewalld. Also checks auditd rules and syslog configuration. | JSON, CSV, HTML |
+| [Linux Sysctl Auditor](./OnPrem/Linux/linux-sysctl-auditor/) | Checks 24 CIS Benchmark kernel parameters via sysctl: network hardening, TCP, ASLR, dmesg restriction, ptrace scope, protected hardlinks/symlinks. | JSON, CSV, HTML |
+| [Linux Patch Auditor](./OnPrem/Linux/linux-patch-auditor/) | Auto-detects apt/yum/dnf/zypper and counts available updates (total and security-specific), checks auto-update agent, last update timestamp, and kernel upgrade status. | JSON, CSV, HTML |
 | [SMB Signing Auditor](./OnPrem/Windows/smbsigning-auditor/) | Checks SMB signing enforcement on server and client. Missing server-side enforcement allows NTLM relay attacks. | JSON, CSV, HTML |
 | [Audit Policy Auditor](./OnPrem/Windows/auditpolicy-auditor/) | Checks 15 critical Windows audit policy subcategories (logon, process creation, privilege use, etc.) against CIS baseline. | JSON, CSV, HTML |
 | [BitLocker Auditor](./OnPrem/Windows/bitlocker-auditor/) | Audits BitLocker drive encryption status, encryption method strength, TPM protector, and recovery password configuration. | JSON, CSV, HTML |
@@ -151,6 +224,16 @@ Connect-AzAccount
 ---
 
 ## 🚀 Quick Start
+
+### Full Audit (Orchestrator)
+```bash
+git clone https://github.com/Decdd19/SecurityAuditScripts.git
+cd SecurityAuditScripts
+pip install boto3 rich
+sudo python3 audit.py --client "Acme Corp" --all --open --output ./reports/
+```
+
+> See the [Audit Orchestrator](#-audit-orchestrator) section above for all flags and examples.
 
 ### AWS
 ```bash

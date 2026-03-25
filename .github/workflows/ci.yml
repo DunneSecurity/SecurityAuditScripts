@@ -11,24 +11,24 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install -r AWS/requirements-test.txt
+        run: pip install -r requirements-test.txt
 
       - name: Run tests
-        run: pytest AWS/ OnPrem/Linux/ -v
+        run: pytest AWS/ OnPrem/Linux/ tests/ -v --import-mode=importlib
 
   pester:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
 
       - name: Install Pester
         shell: pwsh
@@ -36,4 +36,4 @@ jobs:
 
       - name: Run Pester tests
         shell: pwsh
-        run: Invoke-Pester Azure, OnPrem/Windows -Output Detailed
+        run: Invoke-Pester -Path Azure, OnPrem/Windows -Output Detailed
