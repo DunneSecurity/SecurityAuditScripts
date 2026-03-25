@@ -103,6 +103,9 @@ SecurityAuditScripts/
 │   ├── subscription-auditor/       # Defender for Cloud, PIM, Global Admin hygiene
 │   ├── keyvault-auditor/           # Key Vault RBAC, soft delete, secret/cert/key expiry
 │   └── defender-auditor/           # Defender for Cloud plans, secure score, contacts
+├── Email/
+│   ├── README.md
+│   └── email-security-auditor/       # SPF, DKIM, DMARC DNS checks
 └── OnPrem/
     ├── README.md
     ├── Windows/
@@ -173,6 +176,16 @@ SecurityAuditScripts/
 | [SMB Signing Auditor](./OnPrem/Windows/smbsigning-auditor/) | Checks SMB signing enforcement on server and client. Missing server-side enforcement allows NTLM relay attacks. | JSON, CSV, HTML |
 | [Audit Policy Auditor](./OnPrem/Windows/auditpolicy-auditor/) | Checks 15 critical Windows audit policy subcategories (logon, process creation, privilege use, etc.) against CIS baseline. | JSON, CSV, HTML |
 | [BitLocker Auditor](./OnPrem/Windows/bitlocker-auditor/) | Audits BitLocker drive encryption status, encryption method strength, TPM protector, and recovery password configuration. | JSON, CSV, HTML |
+
+### Email
+
+| Script | Description | Output |
+|--------|-------------|--------|
+| [Email Security Auditor](./Email/email-security-auditor/) | Audits a domain's email security DNS configuration — SPF, DKIM, and DMARC. No cloud credentials required; DNS queries only. | JSON, CSV, HTML |
+
+**Prerequisites:** `pip install dnspython`
+**No credentials needed** — DNS queries only
+**Usage:** `python3 audit.py --client "Acme Corp" --email --domain acme.ie`
 
 ---
 
