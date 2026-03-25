@@ -59,3 +59,19 @@ def test_query_mx_nxdomain_returns_empty():
     with patch('dns.resolver.resolve', side_effect=dns.resolver.NXDOMAIN):
         result = esa.query_mx('nomail.example.com')
     assert result == []
+
+
+def test_query_txt_no_answer_returns_empty():
+    """query_txt returns empty list on NoAnswer (domain exists, no TXT record)."""
+    import dns.resolver
+    with patch('dns.resolver.resolve', side_effect=dns.resolver.NoAnswer):
+        result = esa.query_txt('notxt.example.com')
+    assert result == []
+
+
+def test_query_mx_no_answer_returns_empty():
+    """query_mx returns empty list on NoAnswer (domain exists, no MX record)."""
+    import dns.resolver
+    with patch('dns.resolver.resolve', side_effect=dns.resolver.NoAnswer):
+        result = esa.query_mx('nomx.example.com')
+    assert result == []
