@@ -303,3 +303,11 @@ def test_dmarc_without_rua():
     dmarc03 = next(f for f in findings if f['check_id'] == 'DMARC-03')
     assert dmarc03['status'] == 'FAIL'
     assert dmarc03['risk_level'] == 'MEDIUM'
+
+
+def test_dmarc_dns_error_warn():
+    """DNS transient error on DMARC lookup → DMARC-01 WARN."""
+    with patch.object(esa, 'query_txt', return_value=None):
+        findings = esa.check_dmarc('example.com')
+    dmarc01 = next(f for f in findings if f['check_id'] == 'DMARC-01')
+    assert dmarc01['status'] == 'WARN'
