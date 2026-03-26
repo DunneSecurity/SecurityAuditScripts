@@ -233,3 +233,20 @@ def test_check_referrer_policy_fail_unsafe_url():
 def test_check_referrer_policy_fail_origin():
     f = hha.check_referrer_policy(make_conn(**{"referrer-policy": "origin"}))
     assert f["status"] == "FAIL"
+
+
+# ── HDR-05: Permissions-Policy ───────────────────────────────────────────────
+
+def test_check_permissions_policy_pass():
+    f = hha.check_permissions_policy(
+        make_conn(**{"permissions-policy": "camera=(), microphone=()"})
+    )
+    assert f["check_id"] == "HDR-05"
+    assert f["status"] == "PASS"
+
+
+def test_check_permissions_policy_warn_absent():
+    f = hha.check_permissions_policy(make_conn(**{"permissions-policy": None}))
+    assert f["status"] == "WARN"
+    assert f["risk_level"] == "LOW"
+    assert f["severity_score"] == 0  # WARN → score always 0

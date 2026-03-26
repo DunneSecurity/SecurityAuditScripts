@@ -212,3 +212,22 @@ def check_referrer_policy(conn: dict) -> dict:
         f"Referrer-Policy: '{val}' leaks full URLs to third-party origins.",
         "Use 'strict-origin-when-cross-origin' or 'no-referrer'.",
     )
+
+
+# ── HDR-05: Permissions-Policy ───────────────────────────────────────────────
+
+def check_permissions_policy(conn: dict) -> dict:
+    """HDR-05: Permissions-Policy should be present to restrict browser features."""
+    val = conn.get("headers", {}).get("permissions-policy", "").strip()
+    if val:
+        return _finding(
+            "HDR-05", "Permissions-Policy", "PASS", "LOW", 0,
+            f"Permissions-Policy present: {val[:120]}", "",
+        )
+    return _finding(
+        "HDR-05", "Permissions-Policy", "WARN", "LOW", 0,
+        "Permissions-Policy header is absent. Browser features (camera, microphone, "
+        "geolocation) are unrestricted.",
+        "Add 'Permissions-Policy: camera=(), microphone=(), geolocation=()' to disable "
+        "unused browser features.",
+    )
