@@ -34,8 +34,8 @@ graph TD
         E["SPF · DKIM · DMARC"]
     end
 
-    subgraph Network["🌐 Network  —  1 auditor  (Python · stdlib)"]
-        N["SSL/TLS Certificates"]
+    subgraph Network["🌐 Network  —  2 auditors  (Python · stdlib)"]
+        N["SSL/TLS Certificates · HTTP Security Headers"]
     end
 
     O -->|"--aws flag"| AWS
@@ -120,7 +120,8 @@ SecurityAuditScripts/
 │   └── email-security-auditor/  # SPF, DKIM, DMARC DNS checks
 ├── Network/
 │   ├── README.md
-│   └── ssl-tls-auditor/         # SSL/TLS cert expiry, hostname, TLS version, cipher, HSTS
+│   ├── ssl-tls-auditor/         # SSL/TLS cert expiry, hostname, TLS version, cipher, HSTS
+│   └── http-headers-auditor/    # X-Frame-Options, CSP, Referrer-Policy, Permissions-Policy
 └── OnPrem/
     ├── README.md
     ├── Windows/
@@ -203,6 +204,7 @@ SecurityAuditScripts/
 | Script | Description | Output |
 |--------|-------------|--------|
 | [SSL/TLS Auditor](./Network/ssl-tls-auditor/) | Audits a domain's SSL/TLS certificate and TLS configuration — cert expiry, hostname match, self-signed detection, key algorithm, TLS version (min 1.2), weak cipher suite, and HSTS header. No credentials required; TCP port 443 only. | JSON, CSV, HTML |
+| [HTTP Security Headers Auditor](./Network/http-headers-auditor/) | Audits a domain's HTTP security response headers over HTTPS — X-Frame-Options, X-Content-Type-Options, Content-Security-Policy (with unsafe-inline/eval detection), Referrer-Policy, and Permissions-Policy. No credentials required; HTTPS port 443 only. | JSON, CSV, HTML |
 
 ---
 
