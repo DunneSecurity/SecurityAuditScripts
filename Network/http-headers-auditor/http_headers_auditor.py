@@ -275,3 +275,146 @@ def compute_overall_risk(findings: list) -> tuple:
     if score >= 3:
         return "MEDIUM", score
     return "LOW", score
+
+
+# ── Output ─────────────────────────────────────────────────────────────────────
+
+def write_json(report: dict, prefix: str) -> None:
+    path = Path(f"{prefix}.json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(report, f, indent=2, default=str)
+    log.info("JSON report: %s", path)
+
+
+def write_csv(findings: list, prefix: str) -> None:
+    path = Path(f"{prefix}.csv")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not findings:
+        return
+    fields = ["check_id", "name", "status", "risk_level", "severity_score", "detail", "remediation"]
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(findings)
+    log.info("CSV report: %s", path)
+
+
+def write_html(report: dict, prefix: str) -> None:
+    path = Path(f"{prefix}.html")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    domain = report.get("domain", "")
+    summary = report.get("summary", {})
+    overall = summary.get("overall_risk", "UNKNOWN")
+    score = summary.get("severity_score", 0)
+    generated = report.get("generated_at", "")
+
+    risk_colour = {
+        "CRITICAL": "#dc3545", "HIGH": "#fd7e14",
+        "MEDIUM": "#ffc107", "LOW": "#28a745",
+    }.get(overall, "#6c757d")
+    status_colour = {"PASS": "#28a745", "FAIL": "#dc3545", "WARN": "#ffc107"}
+
+    rows = ""
+    for f in report.get("findings", []):
+        sc = status_colour.get(f.get("status", ""), "#6c757d")
+        rows += (
+            f"<tr>"
+            f"<td>{html_lib.escape(f.get('check_id', ''))}</td>"
+            f"<td>{html_lib.escape(f.get('name', ''))}</td>"
+            f"<td style='color:{sc};font-weight:700'>{html_lib.escape(f.get('status', ''))}</td>"
+            f"<td>{html_lib.escape(f.get('risk_level', ''))}</td>"
+            f"<td>{html_lib.escape(f.get('detail', ''))}</td>"
+            f"<td>{html_lib.escape(f.get('remediation', ''))}</td>"
+            f"</tr>\n"
+        )
+
+    html_content = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>HTTP Headers Audit — {html_lib.escape(domain)}</title>
+<style>
+  body{{font-family:sans-serif;margin:2rem;background:#f8f9fa}}
+  h1{{color:#212529}} .badge{{display:inline-block;padding:4px 12px;border-radius:4px;
+  color:#fff;font-weight:700;background:{risk_colour}}}
+  table{{border-collapse:collapse;width:100%;background:#fff;border-radius:8px;overflow:hidden;
+  box-shadow:0 2px 8px rgba(0,0,0,.06)}}
+  th{{background:#343a40;color:#fff;padding:10px 14px;text-align:left}}
+  td{{padding:10px 14px;border-bottom:1px solid #dee2e6;vertical-align:top}}
+  tr:last-child td{{border-bottom:none}}
+</style></head><body>
+<h1>HTTP Security Headers Audit</h1>
+<p><strong>Domain:</strong> {html_lib.escape(domain)} &nbsp;
+   <strong>Risk:</strong> <span class="badge">{html_lib.escape(overall)}</span> &nbsp;
+   <strong>Score:</strong> {score} &nbsp;
+   <strong>Generated:</strong> {html_lib.escape(generated)}</p>
+<table>
+<thead><tr><th>ID</th><th>Check</th><th>Status</th><th>Risk</th><th>Detail</th><th>Remediation</th></tr></thead>
+<tbody>{rows}</tbody></table>
+</body></html>"""
+
+    path.write_text(html_content)
+    log.info("HTML report: %s", path)
+
+
+# ── Entry point ────────────────────────────────────────────────────────────────
+
+def run(domain: str, port: int, output_prefix: str, fmt: str) -> dict:
+    """Run all HTTP header checks for domain and write reports. Returns report dict."""
+    findings = run_audit(domain, port)
+    overall_risk, score = compute_overall_risk(findings)
+
+    report = {
+        "domain": domain,
+        "port": port,
+        "generated_at": NOW.isoformat(),
+        "summary": {
+            "overall_risk": overall_risk,
+            "severity_score": score,
+            "connected": any(
+                f["check_id"] == "HDR-00" and f["status"] == "PASS" for f in findings
+            ),
+        },
+        "findings": findings,
+        "pillar": "headers",
+        "risk_level": overall_risk,
+    }
+
+    if fmt in ("json", "all"):
+        write_json(report, output_prefix)
+    if fmt in ("csv", "all"):
+        write_csv(findings, output_prefix)
+    if fmt in ("html", "all"):
+        write_html(report, output_prefix)
+    if fmt == "stdout":
+        print(json.dumps(report, indent=2, default=str))
+
+    col = {
+        "CRITICAL": "\033[91m", "HIGH": "\033[33m",
+        "MEDIUM": "\033[93m", "LOW": "\033[92m",
+    }.get(overall_risk, "")
+    end = "\033[0m"
+    print(f"\n{'='*44}")
+    print(f"  HTTP HEADERS AUDIT -- {domain}:{port}")
+    print(f"{'-'*44}")
+    print(f"  Overall risk:    {col}{overall_risk}{end}")
+    print(f"  Score:           {score}")
+    print(f"  Connected:       {'Yes' if report['summary']['connected'] else 'No'}")
+    print(f"{'='*44}\n")
+
+    return report
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="HTTP Security Headers Auditor")
+    parser.add_argument("--domain", required=True, help="Domain to audit (e.g. acme.ie)")
+    parser.add_argument("--port", type=int, default=443, help="HTTPS port (default: 443)")
+    parser.add_argument("--output", "-o", default="http_headers_report",
+                        help="Output filename prefix (default: http_headers_report)")
+    parser.add_argument(
+        "--format", "-f",
+        choices=["json", "csv", "html", "all", "stdout"],
+        default="json",
+        help="Output format (default: json)",
+    )
+    args = parser.parse_args()
+    run(args.domain, args.port, args.output, args.format)
