@@ -61,6 +61,8 @@ KNOWN_PATTERNS = [
     "defender_report.json",
     # Email security
     "email_report.json",
+    # Network / SSL-TLS
+    "ssl_report.json",
 ]
 
 # Human-readable names for display
@@ -96,6 +98,7 @@ PILLAR_LABELS = {
     "elb": "Load Balancers",
     "defender": "Defender for Cloud",
     "email": "Email Security (SPF/DKIM/DMARC)",
+    "tls":   "SSL/TLS Certificates",
 }
 
 GRADE_COLOURS = {
