@@ -303,3 +303,34 @@ def check_hostname_match(conn: dict, domain: str) -> dict:
         f"Domain {domain!r} does not match certificate CN {cn!r} and no SANs present.",
         "Obtain a certificate that includes your domain in the subjectAltName.",
     )
+
+
+# ── TLS-03: Self-signed certificate ──────────────────────────────────────────
+
+def check_self_signed(conn: dict) -> dict:
+    """TLS-03: Detect self-signed certificate by comparing issuer to subject."""
+    pc = conn.get("peercert", {})
+
+    if not pc:
+        return _finding(
+            "TLS-03", "No Self-Signed Certificate", "WARN", "HIGH", 0,
+            "Certificate could not be decoded — self-signed detection skipped.",
+            "Verify the certificate chain manually with: "
+            "openssl s_client -connect domain:443 -showcerts",
+        )
+
+    issuer = pc.get("issuer", ())
+    subject = pc.get("subject", ())
+
+    if issuer and subject and issuer == subject:
+        return _finding(
+            "TLS-03", "No Self-Signed Certificate", "FAIL", "HIGH", 5,
+            "Certificate is self-signed (issuer equals subject). "
+            "All browsers display a security warning for self-signed certificates.",
+            "Replace with a certificate from a trusted CA. "
+            "Let's Encrypt provides free, trusted certificates (letsencrypt.org).",
+        )
+    return _finding(
+        "TLS-03", "No Self-Signed Certificate", "PASS", "HIGH", 0,
+        "Certificate is signed by a CA (issuer differs from subject)", "",
+    )

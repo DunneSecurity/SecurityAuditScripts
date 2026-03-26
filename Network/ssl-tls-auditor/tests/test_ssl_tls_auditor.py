@@ -228,3 +228,34 @@ def test_check_hostname_match_empty_peercert_fails():
     finding = sta.check_hostname_match(conn, "acme.ie")
     assert finding["status"] == "FAIL"
     assert finding["risk_level"] == "CRITICAL"
+
+
+# ── TLS-03: Self-signed certificate ──────────────────────────────────────────
+
+def test_check_self_signed_ca_signed_passes():
+    """Issuer differs from subject → TLS-03 PASS (CA-signed)."""
+    finding = sta.check_self_signed(make_conn())  # default has different issuer/subject
+    assert finding["check_id"] == "TLS-03"
+    assert finding["status"] == "PASS"
+
+
+def test_check_self_signed_self_signed_fails():
+    """Issuer == subject → TLS-03 FAIL HIGH."""
+    self_signed_pc = {
+        **make_conn()["peercert"],
+        "issuer":  ((("commonName", "acme.ie"),),),
+        "subject": ((("commonName", "acme.ie"),),),
+    }
+    conn = make_conn(peercert=self_signed_pc)
+    finding = sta.check_self_signed(conn)
+    assert finding["status"] == "FAIL"
+    assert finding["risk_level"] == "HIGH"
+    assert finding["severity_score"] > 0
+
+
+def test_check_self_signed_empty_peercert_warns():
+    """Empty peercert → TLS-03 WARN (cannot determine)."""
+    conn = make_conn(peercert={})
+    finding = sta.check_self_signed(conn)
+    assert finding["check_id"] == "TLS-03"
+    assert finding["status"] == "WARN"
