@@ -178,3 +178,37 @@ def check_content_security_policy(conn: dict) -> dict:
         "HDR-03", "Content-Security-Policy", "PASS", "HIGH", 0,
         f"Content-Security-Policy present without unsafe directives: {val[:120]}", "",
     )
+
+
+# ── HDR-04: Referrer-Policy ───────────────────────────────────────────────────
+
+_SAFE_REFERRER = frozenset({
+    "no-referrer",
+    "no-referrer-when-downgrade",
+    "strict-origin",
+    "strict-origin-when-cross-origin",
+    "same-origin",
+    "origin-when-cross-origin",
+})
+
+
+def check_referrer_policy(conn: dict) -> dict:
+    """HDR-04: Referrer-Policy must be present and not leak full URLs cross-site."""
+    val = conn.get("headers", {}).get("referrer-policy", "").strip().lower()
+    if not val:
+        return _finding(
+            "HDR-04", "Referrer-Policy", "FAIL", "MEDIUM", 4,
+            "Referrer-Policy header is absent. Browsers use their default policy, "
+            "which may send full URLs as referrers to third-party sites.",
+            "Add 'Referrer-Policy: strict-origin-when-cross-origin' to all responses.",
+        )
+    if val in _SAFE_REFERRER:
+        return _finding(
+            "HDR-04", "Referrer-Policy", "PASS", "MEDIUM", 0,
+            f"Referrer-Policy: {val}", "",
+        )
+    return _finding(
+        "HDR-04", "Referrer-Policy", "FAIL", "MEDIUM", 4,
+        f"Referrer-Policy: '{val}' leaks full URLs to third-party origins.",
+        "Use 'strict-origin-when-cross-origin' or 'no-referrer'.",
+    )

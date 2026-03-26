@@ -197,3 +197,39 @@ def test_check_csp_fail_absent():
     assert f["status"] == "FAIL"
     assert f["risk_level"] == "HIGH"
     assert f["severity_score"] == 8
+
+
+# ── HDR-04: Referrer-Policy ───────────────────────────────────────────────────
+
+def test_check_referrer_policy_pass_strict_origin():
+    f = hha.check_referrer_policy(
+        make_conn(**{"referrer-policy": "strict-origin-when-cross-origin"})
+    )
+    assert f["check_id"] == "HDR-04"
+    assert f["status"] == "PASS"
+
+
+def test_check_referrer_policy_pass_no_referrer_when_downgrade():
+    # Explicitly PASS per design decision
+    f = hha.check_referrer_policy(
+        make_conn(**{"referrer-policy": "no-referrer-when-downgrade"})
+    )
+    assert f["status"] == "PASS"
+
+
+def test_check_referrer_policy_fail_absent():
+    f = hha.check_referrer_policy(make_conn(**{"referrer-policy": None}))
+    assert f["status"] == "FAIL"
+    assert f["risk_level"] == "MEDIUM"
+    assert f["severity_score"] == 4
+
+
+def test_check_referrer_policy_fail_unsafe_url():
+    f = hha.check_referrer_policy(make_conn(**{"referrer-policy": "unsafe-url"}))
+    assert f["status"] == "FAIL"
+    assert f["severity_score"] == 4
+
+
+def test_check_referrer_policy_fail_origin():
+    f = hha.check_referrer_policy(make_conn(**{"referrer-policy": "origin"}))
+    assert f["status"] == "FAIL"
