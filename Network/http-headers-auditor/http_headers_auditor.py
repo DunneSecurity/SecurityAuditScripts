@@ -309,48 +309,88 @@ def write_html(report: dict, prefix: str) -> None:
     score = summary.get("severity_score", 0)
     generated = report.get("generated_at", "")
 
-    risk_colour = {
+    RISK_COLOURS = {
         "CRITICAL": "#dc3545", "HIGH": "#fd7e14",
         "MEDIUM": "#ffc107", "LOW": "#28a745",
-    }.get(overall, "#6c757d")
-    status_colour = {"PASS": "#28a745", "FAIL": "#dc3545", "WARN": "#ffc107"}
+    }
+    STATUS_COLOURS = {"PASS": "#28a745", "FAIL": "#dc3545", "WARN": "#fd7e14"}
+    risk_colour = RISK_COLOURS.get(overall, "#6c757d")
+
+    findings = report.get("findings", [])
+    total = len(findings)
+    n_fail = sum(1 for f in findings if f.get("status") == "FAIL")
+    n_warn = sum(1 for f in findings if f.get("status") == "WARN")
+    n_pass = sum(1 for f in findings if f.get("status") == "PASS")
+
+    fail_colour = "#dc3545" if n_fail > 0 else "#6c757d"
+    warn_colour = "#fd7e14" if n_warn > 0 else "#6c757d"
 
     rows = ""
-    for f in report.get("findings", []):
-        sc = status_colour.get(f.get("status", ""), "#6c757d")
+    for f in findings:
+        st = f.get("status", "")
+        rl = f.get("risk_level", "")
+        sc = STATUS_COLOURS.get(st, "#6c757d")
+        rc = RISK_COLOURS.get(rl, "#6c757d")
         rows += (
             f"<tr>"
             f"<td>{html_lib.escape(f.get('check_id', ''))}</td>"
             f"<td>{html_lib.escape(f.get('name', ''))}</td>"
-            f"<td style='color:{sc};font-weight:700'>{html_lib.escape(f.get('status', ''))}</td>"
-            f"<td>{html_lib.escape(f.get('risk_level', ''))}</td>"
+            f"<td><span style='background:{sc};color:#fff;padding:2px 10px;"
+            f"border-radius:10px;font-weight:700;font-size:0.85em'>"
+            f"{html_lib.escape(st)}</span></td>"
+            f"<td><span style='background:{rc};color:#fff;padding:2px 10px;"
+            f"border-radius:10px;font-weight:700;font-size:0.85em'>"
+            f"{html_lib.escape(rl)}</span></td>"
             f"<td>{html_lib.escape(f.get('detail', ''))}</td>"
             f"<td>{html_lib.escape(f.get('remediation', ''))}</td>"
             f"</tr>\n"
         )
 
     html_content = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8">
-<title>HTTP Headers Audit — {html_lib.escape(domain)}</title>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>HTTP Security Headers Audit \u2014 {html_lib.escape(domain)}</title>
 <style>
-  body{{font-family:sans-serif;margin:2rem;background:#f8f9fa}}
-  h1{{color:#212529}} .badge{{display:inline-block;padding:4px 12px;border-radius:4px;
-  color:#fff;font-weight:700;background:{risk_colour}}}
-  table{{border-collapse:collapse;width:100%;background:#fff;border-radius:8px;overflow:hidden;
-  box-shadow:0 2px 8px rgba(0,0,0,.06)}}
-  th{{background:#343a40;color:#fff;padding:10px 14px;text-align:left}}
-  td{{padding:10px 14px;border-bottom:1px solid #dee2e6;vertical-align:top}}
-  tr:last-child td{{border-bottom:none}}
-</style></head><body>
-<h1>HTTP Security Headers Audit</h1>
-<p><strong>Domain:</strong> {html_lib.escape(domain)} &nbsp;
-   <strong>Risk:</strong> <span class="badge">{html_lib.escape(overall)}</span> &nbsp;
-   <strong>Score:</strong> {score} &nbsp;
-   <strong>Generated:</strong> {html_lib.escape(generated)}</p>
+  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; background: #f5f6fa; color: #2c3e50; }}
+  .header {{ background: linear-gradient(135deg, #1a1a2e, #16213e); color: white; padding: 30px 40px; }}
+  .header h1 {{ margin: 0 0 8px; font-size: 1.8em; }}
+  .header p {{ margin: 0; opacity: 0.85; }}
+  .summary {{ display: flex; gap: 20px; padding: 20px 40px; flex-wrap: wrap; }}
+  .card {{ background: white; border-radius: 8px; padding: 20px 30px; flex: 1; min-width: 120px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); text-align: center; }}
+  .card .num {{ font-size: 2.4em; font-weight: bold; }}
+  .card .label {{ color: #666; font-size: 0.88em; margin-top: 4px; }}
+  .table-wrap {{ padding: 0 40px 40px; overflow-x: auto; }}
+  table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }}
+  th {{ background: #1a1a2e; color: white; padding: 12px 15px; text-align: left; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.5px; }}
+  td {{ padding: 10px 15px; border-bottom: 1px solid #ecf0f1; vertical-align: top; }}
+  tr:last-child td {{ border-bottom: none; }}
+  tr:hover td {{ background: #f8f9ff; }}
+  .footer {{ text-align: center; padding: 20px; color: #999; font-size: 0.85em; }}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>\U0001f510 HTTP Security Headers Audit</h1>
+  <p><strong>Domain:</strong> {html_lib.escape(domain)} &nbsp;|&nbsp;
+     <span style="background:{risk_colour};color:#fff;padding:3px 12px;border-radius:12px;font-weight:700">{html_lib.escape(overall)}</span>
+     &nbsp;|&nbsp; Score: {score} &nbsp;|&nbsp; Generated: {html_lib.escape(generated)}</p>
+</div>
+<div class="summary">
+  <div class="card"><div class="num" style="color:#3498db">{total}</div><div class="label">Total Checks</div></div>
+  <div class="card"><div class="num" style="color:{fail_colour}">{n_fail}</div><div class="label">FAIL</div></div>
+  <div class="card"><div class="num" style="color:{warn_colour}">{n_warn}</div><div class="label">WARN</div></div>
+  <div class="card"><div class="num" style="color:#28a745">{n_pass}</div><div class="label">PASS</div></div>
+</div>
+<div class="table-wrap">
 <table>
 <thead><tr><th>ID</th><th>Check</th><th>Status</th><th>Risk</th><th>Detail</th><th>Remediation</th></tr></thead>
-<tbody>{rows}</tbody></table>
-</body></html>"""
+<tbody>{rows}</tbody>
+</table>
+</div>
+<div class="footer">For internal use only &nbsp;|&nbsp; SecurityAuditScripts</div>
+</body>
+</html>"""
 
     path.write_text(html_content)
     log.info("HTML report: %s", path)
