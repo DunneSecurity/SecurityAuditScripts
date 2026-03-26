@@ -63,6 +63,8 @@ KNOWN_PATTERNS = [
     "email_report.json",
     # Network / SSL-TLS
     "ssl_report.json",
+    # Network / HTTP Headers
+    "http_headers_report.json",
 ]
 
 # Human-readable names for display
@@ -99,6 +101,7 @@ PILLAR_LABELS = {
     "defender": "Defender for Cloud",
     "email": "Email Security (SPF/DKIM/DMARC)",
     "tls":   "SSL/TLS Certificates",
+    "http_headers": "HTTP Security Headers",
 }
 
 GRADE_COLOURS = {
