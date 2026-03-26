@@ -117,7 +117,7 @@ def check_x_frame_options(conn: dict) -> dict:
         return _finding(
             "HDR-01", "X-Frame-Options", "WARN", "HIGH", 0,
             f"X-Frame-Options: {val} — ALLOWFROM is deprecated and ignored by Chrome and Firefox.",
-            "Replace with 'Content-Security-Policy: frame-ancestors \\'self\\' https://trusted.com'",
+            "Replace with: Content-Security-Policy: frame-ancestors 'self' https://trusted.com",
         )
     return _finding(
         "HDR-01", "X-Frame-Options", "FAIL", "HIGH", 7,

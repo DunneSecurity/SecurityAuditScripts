@@ -59,6 +59,13 @@ def test_get_http_headers_returns_none_on_http_exception():
     assert result is None
 
 
+def test_get_http_headers_returns_none_on_oserror():
+    with patch('http.client.HTTPSConnection') as mock_cls:
+        mock_cls.return_value.request.side_effect = OSError
+        result = hha.get_http_headers('oserror.example.com', 443)
+    assert result is None
+
+
 def test_get_http_headers_returns_dict_with_lowercased_headers():
     mock_resp = MagicMock()
     mock_resp.getheaders.return_value = [
@@ -144,6 +151,12 @@ def test_check_x_frame_options_fail_absent():
     assert f["severity_score"] == 7
 
 
+def test_check_x_frame_options_fail_unrecognised_value():
+    f = hha.check_x_frame_options(make_conn(**{"x-frame-options": "INVALID"}))
+    assert f["status"] == "FAIL"
+    assert f["severity_score"] == 7
+
+
 # ── HDR-02: X-Content-Type-Options ───────────────────────────────────────────
 
 def test_check_x_content_type_options_pass():
@@ -190,6 +203,15 @@ def test_check_csp_warn_unsafe_eval():
     )
     assert f["status"] == "WARN"
     assert "unsafe-eval" in f["detail"]
+
+
+def test_check_csp_warn_both_unsafe_directives():
+    f = hha.check_content_security_policy(
+        make_conn(**{"content-security-policy": "default-src 'self'; script-src 'unsafe-inline' 'unsafe-eval'"})
+    )
+    assert f["status"] == "WARN"
+    assert "'unsafe-eval'" in f["detail"]
+    assert "'unsafe-inline'" in f["detail"]
 
 
 def test_check_csp_fail_absent():
