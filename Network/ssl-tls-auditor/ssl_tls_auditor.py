@@ -257,3 +257,49 @@ def check_cert_expiry(conn: dict) -> dict:
         "TLS-01", "Certificate Expiry", "PASS", "HIGH", 0,
         f"Certificate valid for {days_left} more day(s) (expires {not_after_str})", "",
     )
+
+
+# ── TLS-02: Hostname match ────────────────────────────────────────────────────
+
+def check_hostname_match(conn: dict, domain: str) -> dict:
+    """TLS-02: Verify certificate SANs (or CN fallback) cover the target domain."""
+    pc = conn.get("peercert", {})
+
+    if not pc:
+        return _finding(
+            "TLS-02", "Hostname Match", "FAIL", "CRITICAL", 8,
+            "Certificate could not be decoded — hostname validation skipped.",
+            "Ensure the server presents a valid certificate.",
+        )
+
+    # Prefer SANs; fall back to CN only if no SANs present
+    sans = [v for t, v in pc.get("subjectAltName", ()) if t == "DNS"]
+    if sans:
+        if any(_domain_matches_san(domain, san) for san in sans):
+            return _finding(
+                "TLS-02", "Hostname Match", "PASS", "CRITICAL", 0,
+                f"Domain {domain!r} found in certificate subjectAltName", "",
+            )
+        return _finding(
+            "TLS-02", "Hostname Match", "FAIL", "CRITICAL", 8,
+            f"Domain {domain!r} not in certificate SANs: {', '.join(sans[:5])}. "
+            "Browsers will show a security warning for this hostname.",
+            "Obtain a certificate that includes your domain in the subjectAltName. "
+            "Add www and apex variants.",
+        )
+
+    # CN fallback (deprecated but still in use)
+    cn = next(
+        (v for rdn in pc.get("subject", ()) for k, v in rdn if k == "commonName"),
+        None,
+    )
+    if cn and _domain_matches_san(domain, cn):
+        return _finding(
+            "TLS-02", "Hostname Match", "PASS", "CRITICAL", 0,
+            f"Domain {domain!r} matches certificate CN (no SAN present — consider adding SAN)", "",
+        )
+    return _finding(
+        "TLS-02", "Hostname Match", "FAIL", "CRITICAL", 8,
+        f"Domain {domain!r} does not match certificate CN {cn!r} and no SANs present.",
+        "Obtain a certificate that includes your domain in the subjectAltName.",
+    )

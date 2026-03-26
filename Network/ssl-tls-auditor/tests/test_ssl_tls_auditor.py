@@ -169,3 +169,62 @@ def test_check_cert_expiry_empty_peercert_returns_fail():
     finding = sta.check_cert_expiry(conn)
     assert finding["status"] == "FAIL"
     assert finding["risk_level"] == "CRITICAL"
+
+
+# ── TLS-02: Hostname match ────────────────────────────────────────────────────
+
+def test_check_hostname_match_san_match_passes():
+    """Domain in subjectAltName (DNS) → TLS-02 PASS."""
+    finding = sta.check_hostname_match(make_conn(), "acme.ie")
+    assert finding["check_id"] == "TLS-02"
+    assert finding["status"] == "PASS"
+
+
+def test_check_hostname_match_san_mismatch_fails():
+    """Domain not in SANs → TLS-02 FAIL CRITICAL."""
+    conn = make_conn(peercert={
+        **make_conn()["peercert"],
+        "subjectAltName": (("DNS", "other.ie"),),
+    })
+    finding = sta.check_hostname_match(conn, "acme.ie")
+    assert finding["status"] == "FAIL"
+    assert finding["risk_level"] == "CRITICAL"
+
+
+def test_check_hostname_match_cn_fallback_passes():
+    """No SANs, domain matches CN → TLS-02 PASS."""
+    conn = make_conn(peercert={
+        **make_conn()["peercert"],
+        "subjectAltName": (),
+        "subject": ((("commonName", "acme.ie"),),),
+    })
+    finding = sta.check_hostname_match(conn, "acme.ie")
+    assert finding["status"] == "PASS"
+
+
+def test_check_hostname_match_wildcard_san_passes():
+    """Domain matches wildcard SAN *.acme.ie → TLS-02 PASS."""
+    conn = make_conn(peercert={
+        **make_conn()["peercert"],
+        "subjectAltName": (("DNS", "*.acme.ie"),),
+    })
+    finding = sta.check_hostname_match(conn, "www.acme.ie")
+    assert finding["status"] == "PASS"
+
+
+def test_check_hostname_match_wildcard_does_not_match_subdomain():
+    """Wildcard *.acme.ie does NOT match foo.bar.acme.ie → TLS-02 FAIL."""
+    conn = make_conn(peercert={
+        **make_conn()["peercert"],
+        "subjectAltName": (("DNS", "*.acme.ie"),),
+    })
+    finding = sta.check_hostname_match(conn, "foo.bar.acme.ie")
+    assert finding["status"] == "FAIL"
+
+
+def test_check_hostname_match_empty_peercert_fails():
+    """Empty peercert → TLS-02 FAIL CRITICAL."""
+    conn = make_conn(peercert={})
+    finding = sta.check_hostname_match(conn, "acme.ie")
+    assert finding["status"] == "FAIL"
+    assert finding["risk_level"] == "CRITICAL"
