@@ -231,3 +231,47 @@ def check_permissions_policy(conn: dict) -> dict:
         "Add 'Permissions-Policy: camera=(), microphone=(), geolocation=()' to disable "
         "unused browser features.",
     )
+
+
+# ── Orchestration ─────────────────────────────────────────────────────────────
+
+_SKIP = "Could not connect — skipped."
+
+
+def run_audit(domain: str, port: int = 443) -> list:
+    """Run all HTTP header checks for domain:port. Always returns exactly 6 findings."""
+    conn = get_http_headers(domain, port)
+    findings = [check_connectivity(conn, domain, port)]
+    if conn is None:
+        findings.extend([
+            _finding("HDR-01", "X-Frame-Options",         "FAIL", "HIGH",   0, _SKIP, ""),
+            _finding("HDR-02", "X-Content-Type-Options",  "FAIL", "MEDIUM", 0, _SKIP, ""),
+            _finding("HDR-03", "Content-Security-Policy", "FAIL", "HIGH",   0, _SKIP, ""),
+            _finding("HDR-04", "Referrer-Policy",         "FAIL", "MEDIUM", 0, _SKIP, ""),
+            _finding("HDR-05", "Permissions-Policy",      "FAIL", "LOW",    0, _SKIP, ""),
+        ])
+        return findings
+    findings.extend([
+        check_x_frame_options(conn),
+        check_x_content_type_options(conn),
+        check_content_security_policy(conn),
+        check_referrer_policy(conn),
+        check_permissions_policy(conn),
+    ])
+    return findings
+
+
+def compute_overall_risk(findings: list) -> tuple:
+    """Return (overall_risk_level, total_severity_score) from findings list."""
+    score = sum(f.get("severity_score", 0) for f in findings)
+    has_critical = any(
+        f.get("risk_level") == "CRITICAL" and f.get("status") == "FAIL"
+        for f in findings
+    )
+    if has_critical or score >= 10:
+        return "CRITICAL", score
+    if score >= 6:
+        return "HIGH", score
+    if score >= 3:
+        return "MEDIUM", score
+    return "LOW", score

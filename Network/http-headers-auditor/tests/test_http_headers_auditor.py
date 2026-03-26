@@ -272,3 +272,37 @@ def test_check_permissions_policy_warn_absent():
     assert f["status"] == "WARN"
     assert f["risk_level"] == "LOW"
     assert f["severity_score"] == 0  # WARN → score always 0
+
+
+# ── run_audit() ───────────────────────────────────────────────────────────────
+
+def test_run_audit_returns_6_findings():
+    with patch('http_headers_auditor.get_http_headers', return_value=make_conn()):
+        findings = hha.run_audit("acme.ie", 443)
+    assert len(findings) == 6
+
+
+def test_run_audit_all_check_ids_present():
+    with patch('http_headers_auditor.get_http_headers', return_value=make_conn()):
+        findings = hha.run_audit("acme.ie", 443)
+    ids = {f["check_id"] for f in findings}
+    assert ids == {"HDR-00", "HDR-01", "HDR-02", "HDR-03", "HDR-04", "HDR-05"}
+
+
+def test_run_audit_connectivity_fail_short_circuits_to_6_findings():
+    with patch('http_headers_auditor.get_http_headers', return_value=None):
+        findings = hha.run_audit("unreachable.ie", 443)
+    assert len(findings) == 6
+    assert findings[0]["check_id"] == "HDR-00"
+    assert findings[0]["status"] == "FAIL"
+    # Remaining 5 should all be FAIL with skip message
+    for f in findings[1:]:
+        assert f["status"] == "FAIL"
+        assert "skipped" in f["detail"].lower()
+
+
+def test_run_audit_all_findings_have_pillar_headers():
+    with patch('http_headers_auditor.get_http_headers', return_value=make_conn()):
+        findings = hha.run_audit("acme.ie", 443)
+    for f in findings:
+        assert f["pillar"] == "headers", f"Expected pillar='headers', got '{f['pillar']}' for {f['check_id']}"
