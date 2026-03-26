@@ -381,3 +381,29 @@ def check_tls_version(conn: dict) -> dict:
         "Configure your web server to support TLS 1.2 and TLS 1.3 only. "
         "Disable TLS 1.0 and TLS 1.1 in server configuration (nginx: ssl_protocols TLSv1.2 TLSv1.3).",
     )
+
+# ── TLS-06: Weak cipher suite ─────────────────────────────────────────────────
+
+def check_weak_cipher(conn: dict) -> dict:
+    """TLS-06: Check the negotiated cipher suite for known weak patterns."""
+    cipher_tuple = conn.get("cipher", ("", "", 0))
+    cipher_name = cipher_tuple[0] if cipher_tuple else ""
+    upper = cipher_name.upper()
+    found = sorted(kw for kw in WEAK_CIPHER_KEYWORDS if kw in upper)
+    # DES-CBC3 variants are 3DES — label explicitly
+    if "CBC3" in upper and "3DES" not in found:
+        found = sorted(found + ["3DES"])
+
+    if found:
+        return _finding(
+            "TLS-06", "Cipher Suite Strength", "FAIL", "HIGH", 5,
+            f"Weak cipher negotiated: {cipher_name!r} "
+            f"(matched weak keyword(s): {', '.join(found)}). "
+            "Weak ciphers can be exploited to decrypt traffic.",
+            "Configure your server to use only strong ciphers: AES-GCM and CHACHA20-POLY1305. "
+            "Example nginx config: ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256'",
+        )
+    return _finding(
+        "TLS-06", "Cipher Suite Strength", "PASS", "HIGH", 0,
+        f"Negotiated cipher suite {cipher_name!r} contains no known weak patterns", "",
+    )

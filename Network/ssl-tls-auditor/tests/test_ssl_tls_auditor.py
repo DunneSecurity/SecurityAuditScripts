@@ -327,3 +327,35 @@ def test_check_tls_version_tls11_fails():
     finding = sta.check_tls_version(make_conn(version="TLSv1.1"))
     assert finding["status"] == "FAIL"
     assert finding["risk_level"] == "HIGH"
+
+
+# ── TLS-06: Weak cipher suite ─────────────────────────────────────────────────
+
+def test_check_weak_cipher_aes_gcm_passes():
+    """AES-GCM cipher → TLS-06 PASS."""
+    finding = sta.check_weak_cipher(make_conn(cipher=("TLS_AES_256_GCM_SHA384", "TLSv1.3", 256)))
+    assert finding["check_id"] == "TLS-06"
+    assert finding["status"] == "PASS"
+
+
+def test_check_weak_cipher_rc4_fails():
+    """RC4 cipher → TLS-06 FAIL HIGH."""
+    finding = sta.check_weak_cipher(make_conn(cipher=("RC4-SHA", "TLSv1.0", 128)))
+    assert finding["status"] == "FAIL"
+    assert finding["risk_level"] == "HIGH"
+    assert "RC4" in finding["detail"]
+
+
+def test_check_weak_cipher_3des_fails():
+    """3DES cipher → TLS-06 FAIL HIGH."""
+    finding = sta.check_weak_cipher(make_conn(cipher=("DES-CBC3-SHA", "TLSv1.0", 168)))
+    assert finding["status"] == "FAIL"
+    assert "3DES" in finding["detail"]
+
+
+def test_check_weak_cipher_chacha20_passes():
+    """CHACHA20-POLY1305 cipher → TLS-06 PASS."""
+    finding = sta.check_weak_cipher(
+        make_conn(cipher=("TLS_CHACHA20_POLY1305_SHA256", "TLSv1.3", 256))
+    )
+    assert finding["status"] == "PASS"
