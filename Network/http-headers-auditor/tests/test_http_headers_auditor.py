@@ -115,3 +115,30 @@ def test_check_connectivity_fail_on_none():
     assert f["severity_score"] == 10
     assert "acme.ie" in f["detail"]
     assert "443" in f["detail"]
+
+
+# ── HDR-01: X-Frame-Options ───────────────────────────────────────────────────
+
+def test_check_x_frame_options_pass_sameorigin():
+    f = hha.check_x_frame_options(make_conn(**{"x-frame-options": "SAMEORIGIN"}))
+    assert f["check_id"] == "HDR-01"
+    assert f["status"] == "PASS"
+
+
+def test_check_x_frame_options_pass_deny():
+    f = hha.check_x_frame_options(make_conn(**{"x-frame-options": "DENY"}))
+    assert f["status"] == "PASS"
+
+
+def test_check_x_frame_options_warn_allowfrom():
+    f = hha.check_x_frame_options(make_conn(**{"x-frame-options": "ALLOWFROM https://trusted.com"}))
+    assert f["status"] == "WARN"
+    assert f["severity_score"] == 0
+    assert "deprecated" in f["detail"].lower()
+
+
+def test_check_x_frame_options_fail_absent():
+    f = hha.check_x_frame_options(make_conn(**{"x-frame-options": None}))
+    assert f["status"] == "FAIL"
+    assert f["risk_level"] == "HIGH"
+    assert f["severity_score"] == 7

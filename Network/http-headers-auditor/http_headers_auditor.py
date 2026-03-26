@@ -90,3 +90,37 @@ def check_connectivity(conn: Optional[dict], domain: str, port: int) -> dict:
         "HDR-00", "HTTP Headers Connectivity", "PASS", "CRITICAL", 0,
         f"HTTPS connection established to {domain}:{port}", "",
     )
+
+
+# ── HDR-01: X-Frame-Options ───────────────────────────────────────────────────
+
+_SAFE_XFO = frozenset({"deny", "sameorigin"})
+
+
+def check_x_frame_options(conn: dict) -> dict:
+    """HDR-01: X-Frame-Options header — DENY or SAMEORIGIN required."""
+    val = conn.get("headers", {}).get("x-frame-options", "").strip()
+    if not val:
+        return _finding(
+            "HDR-01", "X-Frame-Options", "FAIL", "HIGH", 7,
+            "X-Frame-Options header is absent. The site may be embeddable in iframes, "
+            "enabling clickjacking attacks.",
+            "Add 'X-Frame-Options: DENY' or 'X-Frame-Options: SAMEORIGIN' to all responses. "
+            "Prefer Content-Security-Policy frame-ancestors for modern browsers.",
+        )
+    if val.lower() in _SAFE_XFO:
+        return _finding(
+            "HDR-01", "X-Frame-Options", "PASS", "HIGH", 0,
+            f"X-Frame-Options: {val}", "",
+        )
+    if val.lower().startswith("allowfrom"):
+        return _finding(
+            "HDR-01", "X-Frame-Options", "WARN", "HIGH", 0,
+            f"X-Frame-Options: {val} — ALLOWFROM is deprecated and ignored by Chrome and Firefox.",
+            "Replace with 'Content-Security-Policy: frame-ancestors \\'self\\' https://trusted.com'",
+        )
+    return _finding(
+        "HDR-01", "X-Frame-Options", "FAIL", "HIGH", 7,
+        f"X-Frame-Options value '{val}' is not recognised. Expected DENY or SAMEORIGIN.",
+        "Set X-Frame-Options to DENY or SAMEORIGIN.",
+    )
