@@ -430,3 +430,84 @@ def write_html(report, path):
         f.write(html)
     os.chmod(path, 0o600)
     log.info(f"HTML report: {path}")
+
+
+# ── Main run function ─────────────────────────────────────────────────────────
+
+def run(output_prefix='ssh_report', fmt='all'):
+    try:
+        hostname = socket.gethostname()
+    except Exception:
+        hostname = 'unknown'
+
+    config   = get_effective_config()
+    findings = analyse_ssh(config)
+
+    # Sort: non-compliant first, then N/A (None), then compliant
+    def _sort_key(f):
+        if f['compliant'] is False:
+            return 0
+        if f['compliant'] is None:
+            return 1
+        return 2
+
+    findings.sort(key=_sort_key)
+
+    score, risk, criticals, highs, mediums, lows = compute_risk(findings)
+
+    report = {
+        'generated_at': NOW.isoformat(),
+        'hostname':     hostname,
+        'pillar':       'ssh',
+        'risk_level':   risk,
+        'summary': {
+            'total_checks': len(findings),
+            'compliant':     sum(1 for f in findings if f['compliant'] is True),
+            'non_compliant': sum(1 for f in findings if f['compliant'] is False),
+            'unavailable':   sum(1 for f in findings if f['compliant'] is None),
+            'critical':      criticals,
+            'high':          highs,
+            'medium':        mediums,
+            'low':           lows,
+            'overall_risk':  risk,
+            'severity_score': score,
+        },
+        'findings': findings,
+    }
+
+    if fmt in ('json', 'all'):
+        write_json(report, f"{output_prefix}.json")
+    if fmt in ('csv', 'all'):
+        write_csv(findings, f"{output_prefix}.csv")
+    if fmt in ('html', 'all'):
+        write_html(report, f"{output_prefix}.html")
+    if fmt == 'stdout':
+        print(json.dumps(report, indent=2, default=str))
+
+    s = report['summary']
+    print(f"""
+╔══════════════════════════════════════════════╗
+║       SSH AUDITOR — SUMMARY                  ║
+╠══════════════════════════════════════════════╣
+║  Total checks:        {s['total_checks']:<22}║
+║  Compliant:           {s['compliant']:<22}║
+║  Non-compliant:       {s['non_compliant']:<22}║
+║  Unavailable:         {s['unavailable']:<22}║
+║  CRITICAL violations: {s['critical']:<22}║
+║  HIGH violations:     {s['high']:<22}║
+║  MEDIUM violations:   {s['medium']:<22}║
+║  Overall risk:        {s['overall_risk']:<22}║
+╚══════════════════════════════════════════════╝
+""")
+
+    return report
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Linux SSH Hardening Auditor')
+    parser.add_argument('--output', '-o', default='ssh_report')
+    parser.add_argument('--format', '-f', choices=['json', 'csv', 'html', 'all', 'stdout'], default='all')
+    args = parser.parse_args()
+    run(output_prefix=args.output, fmt=args.format)

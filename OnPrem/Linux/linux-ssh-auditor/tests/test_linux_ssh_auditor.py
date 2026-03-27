@@ -406,3 +406,60 @@ def test_write_html_contains_hostname(tmp_path):
     with open(path) as f:
         content = f.read()
     assert 'my-special-host' in content
+
+
+# ── run() ──────────────────────────────────────────────────────────────────────
+
+def _full_sshd_output():
+    return (
+        "permitrootlogin no\n"
+        "permitemptypasswords no\n"
+        "passwordauthentication no\n"
+        "pubkeyauthentication yes\n"
+        "strictmodes yes\n"
+        "hostbasedauthentication no\n"
+        "ignorerhosts yes\n"
+        "x11forwarding no\n"
+        "loglevel VERBOSE\n"
+        "maxauthtries 4\n"
+        "logingracetime 60\n"
+        "allowagentforwarding no\n"
+        "allowtcpforwarding no\n"
+        "usepam yes\n"
+        "clientaliveinterval 300\n"
+        "clientalivecountmax 3\n"
+    )
+
+
+def test_run_returns_report_shape(tmp_path):
+    with patch.object(lsa, 'run_command', return_value=(_full_sshd_output(), 0)):
+        with patch('os.chmod'):
+            report = lsa.run(output_prefix=str(tmp_path / 'ssh_report'), fmt='json')
+    assert 'summary' in report
+    assert 'findings' in report
+    assert report['pillar'] == 'ssh'
+
+
+def test_run_sshd_unavailable_scores_low(tmp_path):
+    """When sshd -T fails, all checks are N/A; overall risk should be LOW."""
+    with patch.object(lsa, 'run_command', return_value=('', 1)):
+        with patch('os.chmod'):
+            report = lsa.run(output_prefix=str(tmp_path / 'ssh_report'), fmt='json')
+    assert report['summary']['overall_risk'] == 'LOW'
+    assert report['summary']['non_compliant'] == 0
+
+
+def test_run_findings_sorted_noncompliant_first(tmp_path):
+    """Non-compliant findings appear before compliant ones."""
+    with patch.object(lsa, 'run_command', return_value=(_full_sshd_output(), 0)):
+        with patch('os.chmod'):
+            report = lsa.run(output_prefix=str(tmp_path / 'ssh_report'), fmt='json')
+    findings = report['findings']
+    statuses = [f['compliant'] for f in findings]
+    # All False entries must come before True entries
+    seen_true = False
+    for s in statuses:
+        if s is True:
+            seen_true = True
+        if seen_true and s is False:
+            pytest.fail("Non-compliant finding appeared after compliant finding")
