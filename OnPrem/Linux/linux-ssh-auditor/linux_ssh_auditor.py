@@ -110,11 +110,15 @@ def _no_weak(weak_patterns):
         algos = [a.strip().lower() for a in val.split(',')]
         for algo in algos:
             for pat in weak_patterns:
-                if pat.endswith('*'):
-                    if algo.startswith(pat[:-1].lower()):
+                p = pat.lower()
+                if p.startswith('*'):
+                    if algo.endswith(p[1:]):
+                        return False, label
+                elif p.endswith('*'):
+                    if algo.startswith(p[:-1]):
                         return False, label
                 else:
-                    if algo == pat.lower():
+                    if algo == p:
                         return False, label
         return True, label
     check.expected_label = label

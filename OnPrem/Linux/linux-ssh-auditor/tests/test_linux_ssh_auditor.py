@@ -161,3 +161,114 @@ def test_analyse_ssh_clientalivecountmax_fail():
     findings = lsa.analyse_ssh(config)
     f = next(x for x in findings if x['param'] == 'clientalivecountmax')
     assert f['compliant'] is False
+
+
+# ── Crypto checks ──────────────────────────────────────────────────────────────
+
+def test_analyse_ssh_ciphers_clean_passes():
+    """Only strong ciphers → compliant=True."""
+    config = {'ciphers': 'aes128-ctr,aes256-ctr,chacha20-poly1305@openssh.com'}
+    findings = lsa.analyse_ssh(config)
+    f = next(x for x in findings if x['param'] == 'ciphers')
+    assert f['compliant'] is True
+
+
+def test_analyse_ssh_ciphers_cbc_fails():
+    """CBC cipher present → compliant=False, severity=HIGH."""
+    config = {'ciphers': 'aes128-ctr,aes256-cbc'}
+    findings = lsa.analyse_ssh(config)
+    f = next(x for x in findings if x['param'] == 'ciphers')
+    assert f['compliant'] is False
+    assert f['severity_if_wrong'] == 'HIGH'
+
+
+def test_analyse_ssh_ciphers_arcfour_fails():
+    """arcfour cipher → compliant=False."""
+    config = {'ciphers': 'arcfour,aes128-ctr'}
+    findings = lsa.analyse_ssh(config)
+    f = next(x for x in findings if x['param'] == 'ciphers')
+    assert f['compliant'] is False
+
+
+def test_analyse_ssh_macs_clean_passes():
+    """Strong MACs only → compliant=True."""
+    config = {'macs': 'hmac-sha2-256,hmac-sha2-512,umac-128@openssh.com'}
+    findings = lsa.analyse_ssh(config)
+    f = next(x for x in findings if x['param'] == 'macs')
+    assert f['compliant'] is True
+
+
+def test_analyse_ssh_macs_hmac_md5_fails():
+    """hmac-md5 present → compliant=False."""
+    config = {'macs': 'hmac-sha2-256,hmac-md5'}
+    findings = lsa.analyse_ssh(config)
+    f = next(x for x in findings if x['param'] == 'macs')
+    assert f['compliant'] is False
+
+
+def test_analyse_ssh_macs_hmac_sha1_fails():
+    """hmac-sha1 present → compliant=False."""
+    config = {'macs': 'hmac-sha1,hmac-sha2-256'}
+    findings = lsa.analyse_ssh(config)
+    f = next(x for x in findings if x['param'] == 'macs')
+    assert f['compliant'] is False
+
+
+def test_analyse_ssh_kex_clean_passes():
+    """Modern KEX only → compliant=True."""
+    config = {'kexalgorithms': 'curve25519-sha256,ecdh-sha2-nistp256'}
+    findings = lsa.analyse_ssh(config)
+    f = next(x for x in findings if x['param'] == 'kexalgorithms')
+    assert f['compliant'] is True
+
+
+def test_analyse_ssh_kex_weak_fails():
+    """diffie-hellman-group1-sha1 present → compliant=False."""
+    config = {'kexalgorithms': 'curve25519-sha256,diffie-hellman-group1-sha1'}
+    findings = lsa.analyse_ssh(config)
+    f = next(x for x in findings if x['param'] == 'kexalgorithms')
+    assert f['compliant'] is False
+
+
+def test_analyse_ssh_hostkeyalgorithms_dss_fails():
+    """ssh-dss in hostkeyalgorithms → compliant=False."""
+    config = {'hostkeyalgorithms': 'rsa-sha2-256,ssh-dss'}
+    findings = lsa.analyse_ssh(config)
+    f = next(x for x in findings if x['param'] == 'hostkeyalgorithms')
+    assert f['compliant'] is False
+
+
+def test_analyse_ssh_crypto_absent_is_skip():
+    """Crypto key absent from sshd -T → compliant=None (compiled-in default)."""
+    config = {}
+    findings = lsa.analyse_ssh(config)
+    f = next(x for x in findings if x['param'] == 'ciphers')
+    assert f['compliant'] is None
+
+
+# ── Additional coverage ────────────────────────────────────────────────────────
+
+def test_lte_nonnumeric_input_returns_false():
+    """_lte(4) with a non-integer string → compliant=False (ValueError path)."""
+    check = lsa._lte(4)
+    ok, _ = check('not-a-number')
+    assert ok is False
+
+
+def test_analyse_ssh_compliant_remediation_is_none():
+    """Compliant finding must have remediation=None."""
+    config = {'permitrootlogin': 'no'}
+    findings = lsa.analyse_ssh(config)
+    f = next(x for x in findings if x['param'] == 'permitrootlogin')
+    assert f['compliant'] is True
+    assert f['remediation'] is None
+
+
+def test_analyse_ssh_noncompliant_remediation_is_set():
+    """Non-compliant finding must have a non-empty remediation string."""
+    config = {'permitrootlogin': 'yes'}
+    findings = lsa.analyse_ssh(config)
+    f = next(x for x in findings if x['param'] == 'permitrootlogin')
+    assert f['compliant'] is False
+    assert f['remediation'] is not None
+    assert len(f['remediation']) > 0
