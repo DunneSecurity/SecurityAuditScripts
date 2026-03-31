@@ -18,6 +18,7 @@ import os
 import sys
 import json
 import csv
+import shutil
 import socket
 import argparse
 import logging
@@ -481,6 +482,61 @@ def run(output_prefix='ssh_report', fmt='all'):
         hostname = socket.gethostname()
     except Exception:
         hostname = 'unknown'
+
+    # If sshd is not installed, return a clean report with no findings.
+    # This avoids triggering the UNKNOWN pillar logic in exec_summary, which
+    # is designed for "ran without sudo", not "SSH daemon absent".
+    sshd_installed = shutil.which('sshd') is not None or Path('/usr/sbin/sshd').exists()
+    if not sshd_installed:
+        report = {
+            'generated_at': NOW.isoformat(),
+            'hostname':     hostname,
+            'pillar':       'ssh',
+            'risk_level':   'LOW',
+            'ssh_daemon_installed': False,
+            'summary': {
+                'total_checks': 0, 'compliant': 0, 'non_compliant': 0,
+                'unavailable': 0, 'critical': 0, 'high': 0, 'medium': 0,
+                'low': 0, 'overall_risk': 'LOW', 'severity_score': 0,
+            },
+            'findings': [],
+        }
+        not_installed_html = (
+            '<div style="margin:0 40px 24px;padding:14px 18px;background:#f0f4ff;'
+            'border-left:4px solid #28a745;border-radius:0 8px 8px 0;">'
+            '<strong>&#10003; SSH daemon not installed</strong><br>'
+            '<span style="font-size:0.9em;color:#555">'
+            'openssh-server is not present on this host — no inbound SSH connections '
+            'are possible and no SSH hardening checks are required.</span></div>'
+        )
+        if fmt in ('json', 'all'):
+            write_json(report, f"{output_prefix}.json")
+        if fmt in ('csv', 'all'):
+            write_csv([], f"{output_prefix}.csv")
+        if fmt in ('html', 'all'):
+            html = (
+                f'<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">'
+                f'<title>SSH Security Audit Report</title>'
+                f'<style>{get_styles()}</style></head><body>'
+                f'<div class="header"><h1>SSH Security Audit Report</h1>'
+                f'<p>Generated: {NOW.isoformat()} &nbsp;|&nbsp; Host: {hostname}</p></div>'
+                f'{not_installed_html}'
+                f'<div class="footer">Linux SSH Hardening Auditor &nbsp;|&nbsp; For internal security use only</div>'
+                f'</body></html>'
+            )
+            p = f"{output_prefix}.html"
+            with open(p, 'w') as fh:
+                fh.write(html)
+            os.chmod(p, 0o600)
+            log.info(f"HTML report: {p}")
+        if fmt == 'stdout':
+            print(json.dumps(report, indent=2, default=str))
+        print('\n╔══════════════════════════════════════════════╗')
+        print('║       SSH AUDITOR — SUMMARY                  ║')
+        print('╠══════════════════════════════════════════════╣')
+        print('║  SSH daemon not installed — checks skipped   ║')
+        print('╚══════════════════════════════════════════════╝\n')
+        return report
 
     config   = get_effective_config()
     findings = analyse_ssh(config)

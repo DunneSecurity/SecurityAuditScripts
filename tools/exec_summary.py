@@ -199,7 +199,9 @@ def compute_pillar_stats(pillar_name, report):
     # P1-2: SSH pillar — escalate to UNKNOWN when >50% findings are N/A (no sudo).
     # N/A findings have compliant=null and are downgraded to LOW, producing a
     # false-safe signal. UNKNOWN signals "incomplete audit" rather than "low risk".
-    if pillar_name == "ssh":
+    # Only fires when sshd IS installed — if ssh_daemon_installed==False the
+    # auditor returned 0 findings and UNKNOWN must not trigger.
+    if pillar_name == "ssh" and report.get("ssh_daemon_installed", True):
         na_count = sum(1 for f in findings if f.get("compliant") is None)
         if findings and na_count / len(findings) > 0.5:
             pillar_risk = "UNKNOWN"
