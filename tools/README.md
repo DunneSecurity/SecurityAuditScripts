@@ -6,13 +6,15 @@ Aggregates JSON report files from all AWS, Azure, and on-premises auditors into 
 
 ## ✨ Features
 
-- Auto-discovers all `*_report.json` files in a target directory
+- Auto-discovers known `*_report.json` files **plus** any unknown `*_report.json` via glob fallback — new auditors appear without manual `KNOWN_PATTERNS` edits
 - Supports 30+ auditor report types across AWS, Azure, M365, Linux, Windows, Email, and Network
 - Per-pillar risk summary cards (CRITICAL / HIGH / MEDIUM / LOW counts)
-- Overall security score (0–100) with letter grade (A–F) and grade hard-caps
-- Top 10 critical/high findings sorted by severity, with resource identifier and remediation
+- Overall security score (0–100) with letter grade (A–F) and grade hard-caps (see [scoring.py](../scoring.py))
+- UNKNOWN pillar handling — SSH auditor run without `sudo` is flagged UNKNOWN rather than false-safe LOW; caps grade at B
+- Top 5 critical/high findings sorted by severity, with resource identifier and remediation (configurable via `--top-n`)
+- CRITICAL callout section — up to 3 most severe findings highlighted above the findings table
 - Quick wins table — low-effort, high-impact actions from ℹ️-prefixed flags on HIGH/CRITICAL findings
-- Output written to a single HTML file (mode 600)
+- Output written to a single portable HTML file (mode 600, no external deps, print-ready via `@media print`)
 - Score calibrated for SMB environments: 13 CRITICAL pillars = score 0
 
 ---
@@ -65,6 +67,9 @@ Starting from 100, score is clamped to [0, 100]. A typical first-time SMB assess
 - Any CRITICAL pillar present → grade capped at B
 - 2+ CRITICAL pillars → grade capped at C
 - Firewall pillar CRITICAL (no firewall detected) → grade floored at D
+- Any UNKNOWN pillar (SSH without sudo) → grade capped at B
+
+Grade logic lives in [`scoring.py`](../scoring.py) and is unit-tested in [`tests/test_scoring.py`](../tests/test_scoring.py).
 
 ---
 
@@ -94,8 +99,31 @@ The quick wins table surfaces ℹ️-prefixed flags from HIGH or CRITICAL findin
 
 ---
 
+## `add_auditor.py` — Scaffold a New Auditor
+
+Generates a new auditor stub and wires it into `audit.py` and `exec_summary.py` automatically.
+
+```bash
+# Scaffold a new Linux auditor
+python3 tools/add_auditor.py --name linux_disk
+
+# Scaffold an AWS auditor with a custom output prefix
+python3 tools/add_auditor.py --name aws_config --output-prefix config_report
+
+# Supported categories: linux, aws, azure, windows, network, email
+python3 tools/add_auditor.py --name linux_apparmor --category linux
+```
+
+Creates: auditor stub + `tests/` directory, inserts `AUDITOR_MAP` entry in `audit.py`, adds `*_report.json` to `KNOWN_PATTERNS` in `exec_summary.py`.
+
+---
+
 ## Running Tests
 
 ```bash
-pytest tools/tests/test_exec_summary.py -v
+# All tests (Linux auditors + scoring + schema)
+pytest OnPrem/Linux/ tests/ -q --import-mode=importlib
+
+# Scoring + schema unit tests only
+pytest tests/test_scoring.py tests/test_schema.py -v
 ```

@@ -27,7 +27,7 @@ graph TD
     end
 
     subgraph M365["📨 M365  —  1 auditor  (PowerShell · Graph · ExO)"]
-        M["CA MFA · Legacy Auth · Mailbox Forwarding · OAuth Consent"]
+        M["CA MFA · Legacy Auth · Mailbox Forwarding · OAuth Consent\nMFA Coverage · Admin Roles · Guest Access"]
     end
 
     subgraph Windows["🪟 Windows  —  6 auditors  (PowerShell)"]
@@ -88,6 +88,8 @@ python3 audit.py --client "Acme Corp" --all --open
 
 > **Prerequisites:** `pip install boto3 rich` · AWS credentials configured · Run with `sudo` for Linux auditors
 
+> **Auto-discovery:** `audit.py` automatically discovers new `*_auditor.py` scripts added to the repo — no manual `AUDITOR_MAP` edits needed for scripts following the naming convention. Use `tools/add_auditor.py` to scaffold new auditors.
+
 ---
 
 ## 📁 Repository Structure
@@ -95,6 +97,10 @@ python3 audit.py --client "Acme Corp" --all --open
 ```
 SecurityAuditScripts/
 ├── README.md
+├── audit.py                            # Orchestrator (auto-discovers auditors via AST scan)
+├── scoring.py                          # Grade engine — compute_overall_score(), unit-tested
+├── schema.py                           # Canonical FindingSchema + validate_finding()
+├── report_utils.py                     # Shared HTML/CSS generator for Linux auditor reports
 ├── AWS/
 │   ├── README.md
 │   ├── iam-privilege-mapper/       # IAM users, roles, privilege escalation
@@ -111,7 +117,8 @@ SecurityAuditScripts/
 │   ├── kms-auditor/                # KMS CMK rotation, key policy, state, aliases
 │   └── elb-auditor/                # ALB/NLB access logging, TLS policy, WAF, HTTPS
 ├── tools/
-│   └── exec_summary.py             # Cross-cloud executive summary report (aggregates all JSON reports)
+│   ├── exec_summary.py             # Cross-cloud executive summary (aggregates all JSON reports, glob fallback)
+│   └── add_auditor.py              # Scaffold a new auditor stub + auto-wire into audit.py + exec_summary
 ├── Azure/
 │   ├── README.md
 │   ├── entra-auditor/              # Entra ID MFA, guest roles, app credentials, privesc
@@ -191,7 +198,7 @@ SecurityAuditScripts/
 
 | Script | Description | Output |
 |--------|-------------|--------|
-| [M365 Auditor](./M365/m365-auditor/) | Audits Microsoft 365 tenant security controls — Conditional Access MFA enforcement, legacy authentication blocking, Exchange Online mailbox auto-forwarding to external addresses, inbox forwarding rules, and OAuth app user consent policy. Requires Microsoft.Graph and ExchangeOnlineManagement modules. | JSON, CSV, HTML |
+| [M365 Auditor](./M365/m365-auditor/) | Audits Microsoft 365 tenant security controls — Conditional Access MFA enforcement, legacy authentication blocking, Exchange Online mailbox auto-forwarding and inbox forwarding rules, OAuth app user consent policy, per-user MFA registration coverage, privileged admin role enumeration, and guest/external user review. Requires Microsoft.Graph and ExchangeOnlineManagement modules. | JSON, CSV, HTML |
 
 ### On-Premises
 
@@ -272,7 +279,7 @@ Install-Module Microsoft.Graph -Scope CurrentUser -Force
 Install-Module ExchangeOnlineManagement -Scope CurrentUser -Force
 
 Connect-AzAccount
-Connect-MgGraph -Scopes "Policy.Read.All","Application.Read.All"
+Connect-MgGraph -Scopes "Policy.Read.All","Application.Read.All","User.Read.All","Directory.Read.All","UserAuthenticationMethod.Read.All"
 Connect-ExchangeOnline -UserPrincipalName admin@contoso.com
 ```
 

@@ -25,6 +25,10 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Shared CSS generator (repo root — 4 levels up from this auditor directory)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
+from report_utils import get_styles
+
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger(__name__)
@@ -210,74 +214,81 @@ def write_html(report, path):
     generated = report['generated_at']
     hostname  = report.get('hostname', 'unknown')
 
-    severity_colors = {
-        'CRITICAL': '#dc3545',
-        'HIGH':     '#fd7e14',
-        'MEDIUM':   '#ffc107',
-        'LOW':      '#28a745',
+    SEV_COLOR = {
+        'CRITICAL': '#dc3545', 'HIGH': '#fd7e14', 'MEDIUM': '#ffc107', 'LOW': '#28a745',
     }
+    risk_color  = SEV_COLOR.get(summary['overall_risk'], '#28a745')
+    pass_count  = summary.get('compliant', 0)
+    na_count    = summary.get('unavailable', 0)
+    fail_count  = summary.get('non_compliant', 0)
 
-    def _row_color(result):
-        if result['compliant'] is None:
-            return '#95a5a6'   # grey — unavailable
-        if result['compliant']:
-            return '#28a745'   # green
-        return severity_colors.get(result['severity_if_wrong'], '#fd7e14')
-
+    # P2-3 + P2-4: rows — FAILs shown by default; PASS and N/A hidden behind toggle.
+    # P2-4: each row shows description (plain English) as primary, param as secondary monospace.
     rows = ''
     for r in findings:
-        badge_color = '#95a5a6' if r['compliant'] is None else ('#28a745' if r['compliant'] else '#dc3545')
-        compliant_label = 'SKIP' if r['compliant'] is None else ('PASS' if r['compliant'] else 'FAIL')
-        status_icon = '\u2139\ufe0f' if r['compliant'] is None else ('\u2705' if r['compliant'] else '\u274c')
-        remediation = r.get('remediation') or ''
-        rows += f"""
-        <tr>
-            <td><span style="background:{badge_color};color:white;padding:2px 8px;border-radius:4px;font-weight:bold">{status_icon} {compliant_label}</span></td>
-            <td><span style="background:{severity_colors.get(r['severity_if_wrong'], '#999')};color:white;padding:2px 8px;border-radius:4px;font-size:0.8em;font-weight:bold">{r['severity_if_wrong']}</span></td>
-            <td style="font-family:monospace;font-size:0.85em">{r['param']}</td>
-            <td style="font-family:monospace">{r['expected']}</td>
-            <td style="font-family:monospace">{r['actual']}</td>
-            <td style="font-size:0.85em">{r['description']}</td>
-            <td style="font-size:0.8em;color:#555">{remediation}</td>
-        </tr>"""
+        sev       = r.get('severity_if_wrong', 'LOW')
+        sev_color = SEV_COLOR.get(sev, '#999')
+        # P2-4: combined param+description cell — description first, param as reference
+        param_cell = (
+            f'<td><div style="font-size:0.88em;font-weight:500">{r["description"]}</div>'
+            f'<div style="font-family:monospace;font-size:0.76em;color:#888;margin-top:2px">{r["param"]}</div></td>'
+        )
+        if r['compliant'] is None:
+            rows += (
+                f'<tr class="row-na" style="opacity:0.5">'
+                f'<td><span style="background:#95a5a6;color:white;padding:2px 8px;border-radius:4px;font-weight:bold">\u2139\ufe0f SKIP</span></td>'
+                f'<td><span style="background:{sev_color};color:white;padding:2px 8px;border-radius:4px;font-size:0.78em;font-weight:bold">{sev}</span></td>'
+                + param_cell +
+                f'<td style="font-family:monospace">{r["expected"]}</td>'
+                f'<td style="font-family:monospace;color:#aaa">N/A</td>'
+                f'<td style="font-size:0.8em;color:#bbb">Parameter unavailable on this kernel</td>'
+                f'</tr>'
+            )
+        elif r['compliant']:
+            rows += (
+                f'<tr class="row-pass">'
+                f'<td><span style="background:#28a745;color:white;padding:2px 8px;border-radius:4px;font-weight:bold">\u2705 PASS</span></td>'
+                f'<td><span style="background:{sev_color};color:white;padding:2px 8px;border-radius:4px;font-size:0.78em;font-weight:bold">{sev}</span></td>'
+                + param_cell +
+                f'<td style="font-family:monospace">{r["expected"]}</td>'
+                f'<td style="font-family:monospace">{r["actual"]}</td>'
+                f'<td style="font-size:0.8em;color:#aaa">\u2014</td>'
+                f'</tr>'
+            )
+        else:
+            remediation = r.get('remediation') or ''
+            rows += (
+                f'<tr class="row-fail">'
+                f'<td><span style="background:#dc3545;color:white;padding:2px 8px;border-radius:4px;font-weight:bold">\u274c FAIL</span></td>'
+                f'<td><span style="background:{sev_color};color:white;padding:2px 8px;border-radius:4px;font-size:0.78em;font-weight:bold">{sev}</span></td>'
+                + param_cell +
+                f'<td style="font-family:monospace">{r["expected"]}</td>'
+                f'<td style="font-family:monospace">{r["actual"]}</td>'
+                f'<td style="font-size:0.8em;color:#555">{remediation}</td>'
+                f'</tr>'
+            )
 
-    risk_color = severity_colors.get(summary['overall_risk'], '#28a745')
+    toggle_label = f'Show all checks ({pass_count} passing, {na_count} unavailable)'
+
+    extra_css = (
+        f"  .risk-badge {{ display:inline-block; background:{risk_color}; color:white;"
+        f" border-radius:8px; padding:4px 14px; font-weight:bold; font-size:1.1em; }}\n"
+        "  .row-pass { display: none; }\n"
+        "  .row-na   { display: none; }\n"
+        "  table.show-all .row-pass { display: table-row; }\n"
+        "  table.show-all .row-na   { display: table-row; }\n"
+        "  .toggle-btn { display:block; margin:0 40px 12px; padding:8px 18px;"
+        " background:#f0f4ff; border:1px solid #c0cfe0; border-radius:6px;"
+        " cursor:pointer; font-size:0.88em; text-align:left; }\n"
+        "  .toggle-btn:hover { background:#e0e8ff; }\n"
+    )
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <title>Kernel Security Audit Report</title>
-<style>
-  /* === BRAND TOKENS — DO NOT CHANGE INDEPENDENTLY ===
-     brand-dark:   #1a1a2e  (headers, th, dark chrome)
-     body-text:    #333     (paragraph text)
-     body-bg:      #f5f6fa  (page background)
-     badge-radius: 8px
-     ================================================ */
-  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; background: #f5f6fa; color: #333; }}
-  .header {{ background: #1a1a2e; color: white; padding: 30px 40px; }}
-  .header h1 {{ margin: 0; font-size: 1.8em; }}
-  .header p {{ margin: 5px 0 0; opacity: 0.8; }}
-  .summary {{ display: flex; gap: 20px; padding: 20px 40px; flex-wrap: wrap; }}
-  .card {{ background: white; border-radius: 8px; padding: 20px 30px; flex: 1; min-width: 140px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); text-align: center; }}
-  .card .num {{ font-size: 2.5em; font-weight: bold; }}
-  .card .label {{ color: #666; font-size: 0.9em; margin-top: 4px; }}
-  .compliant .num {{ color: #28a745; }}
-  .noncompliant .num {{ color: #fd7e14; }}
-  .high .num {{ color: #fd7e14; }}
-  .medium .num {{ color: #ffc107; }}
-  .low .num {{ color: #28a745; }}
-  .total .num {{ color: #3498db; }}
-  .risk-badge {{ display: inline-block; background: {risk_color}; color: white; border-radius: 8px; padding: 4px 14px; font-weight: bold; font-size: 1.1em; }}
-  .table-wrap {{ padding: 0 40px 40px; overflow-x: auto; }}
-  table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }}
-  th {{ background: #1a1a2e; color: white; padding: 12px 15px; text-align: left; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.5px; }}
-  td {{ padding: 10px 15px; border-bottom: 1px solid #ecf0f1; vertical-align: top; }}
-  tr:last-child td {{ border-bottom: none; }}
-  tr:hover td {{ background: #f8f9ff; }}
-  .footer {{ text-align: center; padding: 20px; color: #999; font-size: 0.85em; }}
-</style>
+<style>{get_styles(extra_css)}</style>
 </head>
 <body>
 <div class="header">
@@ -286,15 +297,18 @@ def write_html(report, path):
 </div>
 <div class="summary">
   <div class="card total"><div class="num">{summary['total_checks']}</div><div class="label">Total Checks</div></div>
-  <div class="card compliant"><div class="num">{summary['compliant']}</div><div class="label">Compliant</div></div>
-  <div class="card noncompliant"><div class="num">{summary['non_compliant']}</div><div class="label">Non-Compliant</div></div>
-  <div class="card high"><div class="num">{summary['high']}</div><div class="label">HIGH Violations</div></div>
-  <div class="card medium"><div class="num">{summary['medium']}</div><div class="label">MEDIUM Violations</div></div>
+  <div class="card noncompliant"><div class="num">{fail_count}</div><div class="label">Issues Found</div></div>
+  <div class="card compliant"><div class="num">{pass_count}</div><div class="label">Compliant</div></div>
+  <div class="card high"><div class="num">{summary['high']}</div><div class="label">HIGH Issues</div></div>
+  <div class="card medium"><div class="num">{summary['medium']}</div><div class="label">MEDIUM Issues</div></div>
 </div>
+<button id="sysctl-toggle" class="toggle-btn"
+  onclick="var t=document.getElementById('sysctl-tbl');var s=t.classList.toggle('show-all');this.textContent=s?'Hide passing \u0026 unavailable checks':'{toggle_label}';"
+>{toggle_label}</button>
 <div class="table-wrap">
-  <table>
+  <table id="sysctl-tbl">
     <thead>
-      <tr><th>Status</th><th>Severity</th><th>Parameter</th><th>Expected</th><th>Actual</th><th>Description</th><th>Remediation</th></tr>
+      <tr><th>Status</th><th>Severity</th><th>Check</th><th>Expected</th><th>Actual</th><th>Remediation</th></tr>
     </thead>
     <tbody>{rows}</tbody>
   </table>

@@ -26,6 +26,10 @@ import platform
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+# Shared CSS generator (repo root — 4 levels up from this auditor directory)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
+from report_utils import get_styles
+
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger(__name__)
@@ -445,20 +449,7 @@ def write_html(report, path):
 <meta charset="UTF-8">
 <title>Patch Security Audit Report</title>
 <style>
-  /* === BRAND TOKENS — DO NOT CHANGE INDEPENDENTLY ===
-     brand-dark:   #1a1a2e  (headers, th, dark chrome)
-     body-text:    #333     (paragraph text)
-     body-bg:      #f5f6fa  (page background)
-     badge-radius: 8px
-     ================================================ */
-  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; background: #f5f6fa; color: #333; }}
-  .header {{ background: #1a1a2e; color: white; padding: 30px 40px; }}
-  .header h1 {{ margin: 0; font-size: 1.8em; }}
-  .header p {{ margin: 5px 0 0; opacity: 0.8; }}
-  .summary {{ display: flex; gap: 20px; padding: 20px 40px; flex-wrap: wrap; }}
-  .card {{ background: white; border-radius: 8px; padding: 20px 30px; flex: 1; min-width: 140px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); text-align: center; }}
-  .card .num {{ font-size: 2.5em; font-weight: bold; }}
-  .card .label {{ color: #666; font-size: 0.9em; margin-top: 4px; }}
+{get_styles(f'''
   .risk .num {{ color: {risk_color}; }}
   .detail-wrap {{ padding: 0 40px 20px; }}
   .detail-card {{ background: white; border-radius: 8px; padding: 20px 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 20px; }}
@@ -468,8 +459,7 @@ def write_html(report, path):
   table.info td:first-child {{ font-weight: bold; color: #555; width: 200px; }}
   table.info tr:last-child td {{ border-bottom: none; }}
   ul.flags {{ margin: 0; padding-left: 20px; }}
-  th {{ background: #1a1a2e; color: white; padding: 12px 15px; text-align: left; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.5px; }}
-  .footer {{ text-align: center; padding: 20px; color: #999; font-size: 0.85em; }}
+''')}
 </style>
 </head>
 <body>

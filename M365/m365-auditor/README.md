@@ -12,6 +12,9 @@ Audits Microsoft 365 tenant security posture for common misconfigurations affect
 | Mailbox auto-forwarding to external address | `ExternalMailboxForwarding` | CIS 9 | HIGH |
 | Inbox rule forwarding externally | `ExternalInboxForwardRule` | CIS 9 | HIGH |
 | Unrestricted OAuth app user consent | `UnrestrictedOAuthConsent` | CIS 16 | HIGH |
+| Users with no MFA method registered | `UsersMissingMfaRegistration` | CIS 6 | MEDIUM–HIGH |
+| Privileged admin role member enumeration | `PrivilegedRoleMember` | CIS 5 | MEDIUM |
+| Guest / external users present (stale >90 days) | `GuestUsersPresent` | CIS 5 | LOW–MEDIUM |
 
 ## Prerequisites
 
@@ -27,7 +30,7 @@ Connect before running:
 
 ```powershell
 Connect-AzAccount
-Connect-MgGraph -Scopes "Policy.Read.All","Application.Read.All"
+Connect-MgGraph -Scopes "Policy.Read.All","Application.Read.All","User.Read.All","Directory.Read.All","UserAuthenticationMethod.Read.All"
 Connect-ExchangeOnline -UserPrincipalName admin@contoso.com
 ```
 
@@ -61,6 +64,9 @@ python3 tools/exec_summary.py --input-dir ./reports/client-2026-01-01/
 |--------|-----------|---------|
 | Microsoft.Graph | `Policy.Read.All` | Read CA policies, auth policy |
 | Microsoft.Graph | `Application.Read.All` | Read OAuth app registrations |
+| Microsoft.Graph | `User.Read.All` | Read user list for MFA coverage check |
+| Microsoft.Graph | `UserAuthenticationMethod.Read.All` | Read per-user MFA methods |
+| Microsoft.Graph | `Directory.Read.All` | Read privileged role members |
 | Exchange Online | `View-Only Recipients` | Read mailbox forwarding settings |
 | Exchange Online | `View-Only Configuration` | Read inbox rules |
 

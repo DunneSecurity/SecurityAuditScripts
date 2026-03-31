@@ -6,6 +6,10 @@ BeforeAll {
     function Get-MgIdentityConditionalAccessPolicy { @() }
     function Get-MgPolicyAuthorizationPolicy       { $null }
     function Get-MgOrganization     { @() }
+    function Get-MgUser             { param($Filter, $Property, [switch]$All) @() }
+    function Get-MgUserAuthenticationMethod { param($UserId) @() }
+    function Get-MgDirectoryRole    { @() }
+    function Get-MgDirectoryRoleMember { param($DirectoryRoleId) @() }
 
     function Connect-ExchangeOnline { param($AppId, $Organization, $ShowBanner) }
     function Get-Mailbox            { param($ResultSize) @() }
@@ -213,6 +217,152 @@ Describe 'Get-M365OAuthConsentFindings' {
         $findings = Get-M365OAuthConsentFindings
         $finding = $findings | Where-Object { $_.FindingType -eq 'UnrestrictedOAuthConsent' }
         $finding | Should -BeNullOrEmpty
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Get-M365MfaCoverageFindings
+# ---------------------------------------------------------------------------
+
+Describe 'Get-M365MfaCoverageFindings' {
+    It 'returns no findings when all users have MFA methods registered' {
+        Mock Get-MgUser {
+            @([PSCustomObject]@{ Id = 'u1'; UserPrincipalName = 'alice@contoso.com' })
+        }
+        Mock Get-MgUserAuthenticationMethod {
+            @(
+                [PSCustomObject]@{ '@odata.type' = '#microsoft.graph.passwordAuthenticationMethod' },
+                [PSCustomObject]@{ '@odata.type' = '#microsoft.graph.microsoftAuthenticatorAuthenticationMethod' }
+            )
+        }
+
+        $findings = Get-M365MfaCoverageFindings
+        $findings | Should -BeNullOrEmpty
+    }
+
+    It 'returns a finding when a user has no MFA method beyond password' {
+        Mock Get-MgUser {
+            @([PSCustomObject]@{ Id = 'u1'; UserPrincipalName = 'bob@contoso.com' })
+        }
+        Mock Get-MgUserAuthenticationMethod {
+            @([PSCustomObject]@{ '@odata.type' = '#microsoft.graph.passwordAuthenticationMethod' })
+        }
+
+        $findings = Get-M365MfaCoverageFindings
+        $finding = $findings | Where-Object { $_.FindingType -eq 'UsersMissingMfaRegistration' }
+        $finding | Should -Not -BeNullOrEmpty
+        $finding.CisControl | Should -Match '^CIS'
+        $finding.Recommendation | Should -Match 'MFA'
+    }
+
+    It 'returns no findings when no enabled member users exist' {
+        Mock Get-MgUser { @() }
+
+        $findings = Get-M365MfaCoverageFindings
+        $findings | Should -BeNullOrEmpty
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Get-M365AdminRoleFindings
+# ---------------------------------------------------------------------------
+
+Describe 'Get-M365AdminRoleFindings' {
+    It 'returns no findings when no privileged roles have members' {
+        Mock Get-MgDirectoryRole {
+            @([PSCustomObject]@{ Id = 'role-1'; DisplayName = 'Global Administrator' })
+        }
+        Mock Get-MgDirectoryRoleMember { @() }
+
+        $findings = Get-M365AdminRoleFindings
+        $findings | Should -BeNullOrEmpty
+    }
+
+    It 'returns a MEDIUM finding for each non-service-principal privileged role member' {
+        Mock Get-MgDirectoryRole {
+            @([PSCustomObject]@{ Id = 'role-1'; DisplayName = 'Global Administrator' })
+        }
+        Mock Get-MgDirectoryRoleMember {
+            @([PSCustomObject]@{
+                Id                    = 'member-1'
+                '@odata.type'         = '#microsoft.graph.user'
+                AdditionalProperties  = @{ userPrincipalName = 'admin@contoso.com' }
+            })
+        }
+
+        $findings = Get-M365AdminRoleFindings
+        $finding = $findings | Where-Object { $_.FindingType -eq 'PrivilegedRoleMember' }
+        $finding | Should -Not -BeNullOrEmpty
+        $finding.Severity | Should -Be 'MEDIUM'
+        $finding.Resource | Should -Match 'Global Administrator'
+        $finding.CisControl | Should -Match '^CIS'
+    }
+
+    It 'skips service principals in privileged roles' {
+        Mock Get-MgDirectoryRole {
+            @([PSCustomObject]@{ Id = 'role-1'; DisplayName = 'Global Administrator' })
+        }
+        Mock Get-MgDirectoryRoleMember {
+            @([PSCustomObject]@{
+                Id                   = 'sp-1'
+                '@odata.type'        = '#microsoft.graph.servicePrincipal'
+                AdditionalProperties = @{}
+            })
+        }
+
+        $findings = Get-M365AdminRoleFindings
+        $findings | Should -BeNullOrEmpty
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Get-M365GuestAccessFindings
+# ---------------------------------------------------------------------------
+
+Describe 'Get-M365GuestAccessFindings' {
+    It 'returns no findings when no guest users exist' {
+        Mock Get-MgUser { @() }
+
+        $findings = Get-M365GuestAccessFindings
+        $findings | Should -BeNullOrEmpty
+    }
+
+    It 'returns a finding when guest users are present' {
+        Mock Get-MgUser {
+            @([PSCustomObject]@{
+                Id                = 'g1'
+                UserPrincipalName = 'partner_contoso.com#EXT#@tenant.onmicrosoft.com'
+                DisplayName       = 'Partner User'
+                CreatedDateTime   = (Get-Date).AddDays(-10).ToString('o')
+            })
+        }
+
+        $findings = Get-M365GuestAccessFindings
+        $finding = $findings | Where-Object { $_.FindingType -eq 'GuestUsersPresent' }
+        $finding | Should -Not -BeNullOrEmpty
+        $finding.Resource | Should -Match 'Total guests: 1'
+        $finding.CisControl | Should -Match '^CIS'
+        $finding.Recommendation | Should -Match 'guest'
+    }
+
+    It 'escalates severity when more than 5 guests are stale (>90 days)' {
+        $staleDate = (Get-Date).AddDays(-100).ToString('o')
+        Mock Get-MgUser {
+            1..6 | ForEach-Object {
+                [PSCustomObject]@{
+                    Id                = "g$_"
+                    UserPrincipalName = "guest$_@ext.com"
+                    DisplayName       = "Guest $_"
+                    CreatedDateTime   = $staleDate
+                }
+            }
+        }
+
+        $findings = Get-M365GuestAccessFindings
+        $finding = $findings | Where-Object { $_.FindingType -eq 'GuestUsersPresent' }
+        $finding | Should -Not -BeNullOrEmpty
+        $finding.Severity | Should -Be 'MEDIUM'
+        $finding.Resource | Should -Match 'Stale'
     }
 }
 

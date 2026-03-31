@@ -36,6 +36,10 @@ if (-not (Get-Command -Name 'Get-MgIdentityConditionalAccessPolicy' -ErrorAction
     function Get-MgIdentityConditionalAccessPolicy { @() }
     function Get-MgPolicyAuthorizationPolicy       { $null }
     function Get-MgOrganization     { @() }
+    function Get-MgUser             { param($Filter, $Property, [switch]$All) @() }
+    function Get-MgUserAuthenticationMethod { param($UserId) @() }
+    function Get-MgDirectoryRole    { @() }
+    function Get-MgDirectoryRoleMember { param($DirectoryRoleId) @() }
 }
 if (-not (Get-Command -Name 'Get-Mailbox' -ErrorAction SilentlyContinue)) {
     function Connect-ExchangeOnline    { param($AppId, $Organization, $ShowBanner) }
@@ -278,6 +282,125 @@ function Get-M365OAuthConsentFindings {
 }
 
 # ---------------------------------------------------------------------------
+# Check 5: MFA per-user registration coverage
+# ---------------------------------------------------------------------------
+function Get-M365MfaCoverageFindings {
+    $findings = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $users = @(Get-MgUser -Filter "accountEnabled eq true and userType eq 'Member'" `
+                          -Property Id,DisplayName,UserPrincipalName -All)
+
+    if ($users.Count -eq 0) { return $findings }
+
+    $noMfaUsers = [System.Collections.Generic.List[string]]::new()
+    foreach ($user in $users) {
+        $methods = @(Get-MgUserAuthenticationMethod -UserId $user.Id)
+        # Password method is always present; any other method counts as MFA
+        $mfaMethods = @($methods | Where-Object {
+            $_.'@odata.type' -ne '#microsoft.graph.passwordAuthenticationMethod'
+        })
+        if ($mfaMethods.Count -eq 0) {
+            $noMfaUsers.Add($user.UserPrincipalName)
+        }
+    }
+
+    if ($noMfaUsers.Count -gt 0) {
+        $pct   = [math]::Round(100 * $noMfaUsers.Count / $users.Count)
+        $sev   = if ($pct -ge 50) { 'HIGH' } elseif ($pct -ge 20) { 'MEDIUM' } else { 'LOW' }
+        $score = if ($pct -ge 50) { 7 }      elseif ($pct -ge 20) { 4 }       else { 2 }
+        $sample = ($noMfaUsers | Select-Object -First 5) -join '; '
+        $findings.Add([PSCustomObject]@{
+            FindingType    = 'UsersMissingMfaRegistration'
+            Resource       = $sample
+            Score          = $score
+            Severity       = $sev
+            CisControl     = 'CIS 6'
+            Recommendation = "$($noMfaUsers.Count) of $($users.Count) enabled member account(s) ($pct%) " +
+                             "have no MFA methods registered. " +
+                             "Entra admin centre → Users → Per-user MFA, or enforce registration via " +
+                             "Conditional Access → Registration policy."
+        })
+    }
+
+    return $findings
+}
+
+# ---------------------------------------------------------------------------
+# Check 6: Privileged admin role enumeration
+# ---------------------------------------------------------------------------
+function Get-M365AdminRoleFindings {
+    $findings = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+    $privilegedRoles = @(
+        'Global Administrator', 'Privileged Role Administrator',
+        'Security Administrator', 'Exchange Administrator',
+        'SharePoint Administrator', 'Teams Administrator',
+        'User Administrator', 'Billing Administrator',
+        'Application Administrator', 'Cloud Application Administrator'
+    )
+
+    $roles = @(Get-MgDirectoryRole | Where-Object { $_.DisplayName -in $privilegedRoles })
+
+    foreach ($role in $roles) {
+        $members = @(Get-MgDirectoryRoleMember -DirectoryRoleId $role.Id)
+        foreach ($member in $members) {
+            # Skip service principals — they're expected to hold app-level roles
+            if ($member.'@odata.type' -eq '#microsoft.graph.servicePrincipal') { continue }
+
+            $upn = if ($member.AdditionalProperties -and $member.AdditionalProperties['userPrincipalName']) {
+                $member.AdditionalProperties['userPrincipalName']
+            } else { $member.Id }
+
+            $findings.Add([PSCustomObject]@{
+                FindingType    = 'PrivilegedRoleMember'
+                Resource       = "$($role.DisplayName): $upn"
+                Score          = 3
+                Severity       = 'MEDIUM'
+                CisControl     = 'CIS 5'
+                Recommendation = "Review whether '$upn' requires '$($role.DisplayName)' permanently. " +
+                                 "Use Entra PIM (Privileged Identity Management) for just-in-time access: " +
+                                 "Entra admin centre → Identity Governance → Privileged Identity Management."
+            })
+        }
+    }
+
+    return $findings
+}
+
+# ---------------------------------------------------------------------------
+# Check 7: Guest / external user access review
+# ---------------------------------------------------------------------------
+function Get-M365GuestAccessFindings {
+    $findings = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+    $guests = @(Get-MgUser -Filter "userType eq 'Guest'" `
+                           -Property Id,DisplayName,UserPrincipalName,CreatedDateTime -All)
+
+    if ($guests.Count -eq 0) { return $findings }
+
+    $staleThreshold = (Get-Date).AddDays(-90)
+    $staleGuests = @($guests | Where-Object {
+        $_.CreatedDateTime -and ([datetime]$_.CreatedDateTime) -lt $staleThreshold
+    })
+
+    $sev   = if ($staleGuests.Count -gt 5) { 'MEDIUM' } else { 'LOW' }
+    $score = if ($staleGuests.Count -gt 5) { 4 }        else { 2 }
+
+    $findings.Add([PSCustomObject]@{
+        FindingType    = 'GuestUsersPresent'
+        Resource       = "Total guests: $($guests.Count); Stale (>90 days): $($staleGuests.Count)"
+        Score          = $score
+        Severity       = $sev
+        CisControl     = 'CIS 5'
+        Recommendation = "$($guests.Count) guest account(s) found, $($staleGuests.Count) inactive >90 days. " +
+                         "Review and remove stale guests: Entra admin centre → Users → " +
+                         "Filter by Guest → Remove inactive accounts. " +
+                         "Consider enabling Guest expiration policy via Identity Governance."
+    })
+
+    return $findings
+}
+
+# ---------------------------------------------------------------------------
 # Report formatters
 # ---------------------------------------------------------------------------
 function ConvertTo-M365JsonReport {
@@ -405,17 +528,26 @@ Write-Host "Tenant Domain: $TenantDomain"
 # Collect findings from all checks
 $allFindings = [System.Collections.Generic.List[PSCustomObject]]::new()
 
-Write-Host "[1/4] Checking Conditional Access — MFA policies…"
+Write-Host "[1/7] Checking Conditional Access — MFA policies…"
 Get-M365ConditionalAccessFindings | ForEach-Object { $allFindings.Add($_) }
 
-Write-Host "[2/4] Checking Conditional Access — legacy authentication…"
+Write-Host "[2/7] Checking Conditional Access — legacy authentication…"
 Get-M365LegacyAuthFindings | ForEach-Object { $allFindings.Add($_) }
 
-Write-Host "[3/4] Checking Exchange Online — mailbox forwarding…"
+Write-Host "[3/7] Checking Exchange Online — mailbox forwarding…"
 Get-M365MailboxForwardingFindings -TenantDomain $TenantDomain | ForEach-Object { $allFindings.Add($_) }
 
-Write-Host "[4/4] Checking OAuth app consent policy…"
+Write-Host "[4/7] Checking OAuth app consent policy…"
 Get-M365OAuthConsentFindings | ForEach-Object { $allFindings.Add($_) }
+
+Write-Host "[5/7] Checking MFA per-user registration coverage…"
+Get-M365MfaCoverageFindings | ForEach-Object { $allFindings.Add($_) }
+
+Write-Host "[6/7] Checking privileged admin role members…"
+Get-M365AdminRoleFindings | ForEach-Object { $allFindings.Add($_) }
+
+Write-Host "[7/7] Checking guest / external user access…"
+Get-M365GuestAccessFindings | ForEach-Object { $allFindings.Add($_) }
 
 $findings = @($allFindings)
 Write-Host "Findings: $($findings.Count)"

@@ -13,6 +13,7 @@ Usage:
 """
 
 import argparse
+import ast
 import logging
 import os
 import subprocess
@@ -59,7 +60,57 @@ class AuditorDef:
     requires_domain: bool = False   # Whether the script requires --domain
 
 
-AUDITOR_MAP: Dict[str, AuditorDef] = {
+def _find_output_prefix(script: Path) -> str:
+    """Extract default value of output_prefix param from run() or audit() via AST.
+
+    Checks functions named 'run' or 'audit' (both naming conventions are used).
+    Returns empty string if neither is found or neither has an output_prefix default.
+    """
+    try:
+        tree = ast.parse(script.read_text(errors="replace"))
+    except Exception:
+        return ""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name in ("run", "audit"):
+            args = node.args
+            n_defaults = len(args.defaults)
+            n_args = len(args.args)
+            for i, default in enumerate(args.defaults):
+                arg_idx = n_args - n_defaults + i
+                if args.args[arg_idx].arg == "output_prefix":
+                    if isinstance(default, ast.Constant) and isinstance(default.value, str):
+                        return default.value
+    return ""
+
+
+_SKIP_DIRS = {"tools", "tests", "__pycache__", ".git"}
+
+
+def discover_auditors(repo_root: Path) -> Dict[str, "AuditorDef"]:
+    """Scan repo for *_auditor.py files and return auto-discovered AuditorDef map.
+
+    Key is derived from the stem by stripping the _auditor suffix, e.g.:
+      linux_firewall_auditor.py  →  linux_firewall
+      s3_auditor.py              →  s3
+
+    Scripts that do not expose a run(output_prefix=...) default are skipped.
+    Directories named 'tools', 'tests', '__pycache__', or '.git' are excluded.
+    """
+    discovered: Dict[str, AuditorDef] = {}
+    for script in sorted(repo_root.rglob("*_auditor.py")):
+        if any(part in _SKIP_DIRS for part in script.parts):
+            continue
+        output_prefix = _find_output_prefix(script)
+        if not output_prefix:
+            continue
+        key = script.stem.replace("_auditor", "")
+        discovered[key] = AuditorDef(script=script, output_prefix=output_prefix)
+    return discovered
+
+
+# ── Manual overrides (take precedence over auto-discovered entries) ────────────
+
+_MANUAL_AUDITOR_MAP: Dict[str, AuditorDef] = {
     # ── AWS ──────────────────────────────────────────────────────────────────
     "s3":          AuditorDef(REPO_ROOT / "AWS/s3-auditor/s3_auditor.py",          "s3_report",          False),
     "ec2":         AuditorDef(REPO_ROOT / "AWS/ec2-auditor/ec2_auditor.py",         "ec2_report",         True),
@@ -101,6 +152,17 @@ AUDITOR_MAP: Dict[str, AuditorDef] = {
         requires_domain=True,
     ),
 }
+
+# Build final AUDITOR_MAP: auto-discovered entries + manual overrides.
+# Scripts already covered by a manual entry (same path) are excluded from
+# auto-discovery to avoid duplicate keys for scripts with non-standard names
+# (e.g., email_security_auditor.py is registered manually as "email").
+_manual_script_paths = {defn.script.resolve() for defn in _MANUAL_AUDITOR_MAP.values()}
+AUDITOR_MAP: Dict[str, AuditorDef] = {
+    k: v for k, v in discover_auditors(REPO_ROOT).items()
+    if v.script.resolve() not in _manual_script_paths
+}
+AUDITOR_MAP.update(_MANUAL_AUDITOR_MAP)
 
 AWS_GROUP: List[str] = [
     "s3", "ec2", "sg", "cloudtrail", "rds", "iam",

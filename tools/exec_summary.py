@@ -132,7 +132,8 @@ GRADE_COLOURS = {
 }
 
 RISK_COLOURS = {
-    "CRITICAL": "#dc3545", "HIGH": "#fd7e14", "MEDIUM": "#ffc107", "LOW": "#28a745"
+    "CRITICAL": "#dc3545", "HIGH": "#fd7e14", "MEDIUM": "#ffc107", "LOW": "#28a745",
+    "UNKNOWN": "#6c757d",   # grey — pillar unverifiable (e.g. SSH without sudo)
 }
 
 
@@ -146,12 +147,25 @@ def load_report(path):
 
 
 def discover_reports(directory):
-    """Return list of paths to known report files found in directory."""
+    """Return list of paths to report files found in directory.
+
+    Primary: matches KNOWN_PATTERNS (preserves ordering).
+    Fallback: globs *_report.json for any file not already in the known list,
+    so new auditors are picked up without manual KNOWN_PATTERNS edits.
+    """
     found = []
+    found_set = set()
     for pattern in KNOWN_PATTERNS:
         p = os.path.join(directory, pattern)
         if os.path.exists(p):
             found.append(p)
+            found_set.add(os.path.abspath(p))
+    # Glob fallback — catches any *_report.json not in KNOWN_PATTERNS
+    for p in sorted(Path(directory).glob("*_report.json")):
+        abs_p = str(p.resolve())
+        if abs_p not in found_set:
+            found.append(str(p))
+            found_set.add(abs_p)
     return found
 
 
@@ -182,6 +196,14 @@ def compute_pillar_stats(pillar_name, report):
         if _SEVERITY_RANK[summary_risk] < _SEVERITY_RANK.get(pillar_risk, 3):
             pillar_risk = summary_risk
 
+    # P1-2: SSH pillar — escalate to UNKNOWN when >50% findings are N/A (no sudo).
+    # N/A findings have compliant=null and are downgraded to LOW, producing a
+    # false-safe signal. UNKNOWN signals "incomplete audit" rather than "low risk".
+    if pillar_name == "ssh":
+        na_count = sum(1 for f in findings if f.get("compliant") is None)
+        if findings and na_count / len(findings) > 0.5:
+            pillar_risk = "UNKNOWN"
+
     return {
         "pillar": pillar_name,
         "label": PILLAR_LABELS.get(pillar_name, pillar_name.upper()),
@@ -197,83 +219,11 @@ def compute_pillar_stats(pillar_name, report):
 
 FULL_LINUX_AUDIT_MODULES = {"user", "fw", "sysctl", "patch", "ssh", "ssl", "http_headers"}
 
-
-def compute_overall_score(pillar_stats_list, modules_scanned=None):
-    """
-    Compute 0-100 security score, letter grade, and optional cap note.
-
-    Deductions are per-pillar (not per-finding) to avoid inflating the penalty
-    for regional auditors that emit one finding per AWS region:
-      CRITICAL pillar: -8 pts
-      HIGH pillar:     -3 pts
-      MEDIUM pillar:   -1 pt
-      LOW pillar:       0 pts  (minor issues; not penalised)
-
-    With 20 pillars the worst-case deduction is 160 pts (score floors at 0).
-    A typical first-time SMB assessment with 5-8 CRITICAL pillars scores 36-60.
-
-    Returns (score, grade, grade_note) where grade_note is a string describing
-    any hard-cap that was applied, or "" if no cap fired.
-    """
-    if not pillar_stats_list:
-        return 100, "A", ""
-
-    deductions = 0
-    for stats in pillar_stats_list:
-        # Use pillar_risk as the authoritative level (covers summary.overall_risk overrides)
-        pr = stats.get("pillar_risk", "LOW")
-        if stats.get("critical", 0) > 0 or pr == "CRITICAL":
-            deductions += 8
-        elif stats.get("high", 0) > 0 or pr == "HIGH":
-            deductions += 3
-        elif stats.get("medium", 0) > 0 or pr == "MEDIUM":
-            deductions += 1
-
-    score = max(0, min(100, 100 - deductions))
-
-    if score >= 85:
-        grade = "A"
-    elif score >= 70:
-        grade = "B"
-    elif score >= 55:
-        grade = "C"
-    elif score >= 40:
-        grade = "D"
-    else:
-        grade = "F"
-
-    grade_note = ""
-
-    # Coverage gate: suppress grade if too few modules scanned
-    if modules_scanned is not None and modules_scanned <= 3:
-        return round(score, 1), "?", "Insufficient coverage"
-
-    # Grade hard-caps (applied in ascending severity order so D-floor wins)
-    critical_pillars = [
-        s for s in pillar_stats_list
-        if s.get("critical", 0) > 0 or s.get("pillar_risk") == "CRITICAL"
-    ]
-
-    # a) B-cap: any CRITICAL pillar → grade ≤ B
-    if critical_pillars and grade == "A":
-        grade = "B"
-        grade_note = "capped: CRITICAL pillar present"
-
-    # b) C-cap: 2+ CRITICAL pillars → grade ≤ C
-    if len(critical_pillars) >= 2 and grade in ("A", "B"):
-        grade = "C"
-        grade_note = f"capped: {len(critical_pillars)} CRITICAL pillars"
-
-    # c) D-floor: fw pillar CRITICAL (proxy for no firewall detected) → grade ≤ D
-    fw_critical = any(
-        s["pillar"] == "fw" and (s.get("critical", 0) > 0 or s.get("pillar_risk") == "CRITICAL")
-        for s in pillar_stats_list
-    )
-    if fw_critical and grade in ("A", "B", "C"):
-        grade = "D"
-        grade_note = "floored: no firewall detected"
-
-    return round(score, 1), grade, grade_note
+# Grade + scoring logic extracted to scoring.py for unit-testable isolation
+import sys as _sys
+import os as _os
+_sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from scoring import compute_overall_score  # noqa: E402
 
 
 def get_top_findings(all_findings, n=10):
@@ -410,6 +360,41 @@ def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
             f'</tr>\n'
         )
 
+    # P1-4: CRITICAL callout block — up to 3 critical findings, plain-English, above the main table
+    critical_only = [
+        f for f in top_findings
+        if (f.get("risk_level") or f.get("severity", "")).upper() == "CRITICAL"
+    ][:3]
+    crit_callout_html = ""
+    if critical_only:
+        crit_items_html = ""
+        for f in critical_only:
+            pillar_label = html_lib.escape(
+                PILLAR_LABELS.get(f.get("pillar", ""), f.get("pillar", "").upper())
+            )
+            raw_flags = f.get("flags", [])
+            detail = (raw_flags[0] if raw_flags
+                      else f.get("detail") or f.get("flag") or "")
+            rem = (f.get("remediations", [""])[0] if f.get("remediations")
+                   else f.get("remediation") or f.get("recommendation") or "")
+            crit_items_html += (
+                f'<div class="crit-item">'
+                f'<div class="crit-meta"><span class="crit-badge">CRITICAL</span>'
+                f' <strong>{pillar_label}</strong></div>'
+                f'<div class="crit-detail">{html_lib.escape(detail)}</div>'
+                + (f'<div class="crit-rem">\u21b3 {html_lib.escape(rem)}</div>' if rem else '')
+                + '</div>'
+            )
+        crit_callout_html = (
+            '<div class="section crit-callout">'
+            '<h2>\u26a0 Critical Findings \u2014 Requires Immediate Action</h2>'
+            '<p style="color:#666;font-size:0.9em;margin:0 0 16px">'
+            'These findings represent active risk to your business. '
+            'Address these before any other remediation work.</p>'
+            f'<div class="crit-items">{crit_items_html}</div>'
+            '</div>'
+        )
+
     no_top_findings = ('<tr><td colspan="4" style="text-align:center;color:#888">'
                        'No high/critical findings — great work!</td></tr>') if not top_findings else ""
     no_quick_wins = ('<tr><td colspan="4" style="text-align:center;color:#888">'
@@ -490,6 +475,21 @@ def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
   .flag-item {{ margin-bottom:6px; }}
   .flag-text {{ display:block; font-size:0.85em; }}
   .rem-text {{ display:block; font-size:0.78em; color:#555; padding-left:12px; font-style:italic; }}
+  .crit-callout {{ border-top:3px solid #dc3545; }}
+  .crit-callout h2 {{ color:#dc3545; border-color:#dc354533; }}
+  .crit-items {{ display:flex; flex-direction:column; gap:12px; }}
+  .crit-item {{ background:#fff5f5; border-left:4px solid #dc3545; border-radius:0 8px 8px 0; padding:14px 18px; }}
+  .crit-meta {{ margin-bottom:6px; display:flex; align-items:center; gap:10px; font-size:0.9em; }}
+  .crit-badge {{ background:#dc3545; color:#fff; padding:2px 8px; border-radius:4px; font-size:0.78em; font-weight:700; letter-spacing:0.5px; }}
+  .crit-detail {{ font-size:0.88em; color:#333; margin-bottom:4px; }}
+  .crit-rem {{ font-size:0.82em; color:#555; font-style:italic; }}
+  @media print {{
+    body {{ font-size:10pt; }}
+    .header {{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }}
+    .card {{ box-shadow:none; border:1px solid #ddd; }}
+    table {{ box-shadow:none; }}
+    .footer {{ display:none; }}
+  }}
 </style>
 </head>
 <body>
@@ -517,6 +517,8 @@ def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
   </div>
   {coverage_html}
 </div>
+
+{crit_callout_html}
 
 <div class="section">
   <h2>Top Critical &amp; High Findings</h2>
@@ -572,7 +574,7 @@ def warn_missing_azure_windows(input_dir):
         pass
 
 
-def run(input_dir=".", output_path="exec_summary.html", top_n=10, max_wins=10,
+def run(input_dir=".", output_path="exec_summary.html", top_n=5, max_wins=10,
         client_name="", assessor="", scope=""):
     """Discover reports, compute stats, write HTML summary."""
     report_paths = discover_reports(input_dir)
@@ -631,8 +633,8 @@ def main():
         "--output", default="exec_summary.html",
         help="Output HTML file path (default: exec_summary.html)"
     )
-    parser.add_argument("--top-n", type=int, default=10,
-                        help="Number of top findings to show (default: 10)")
+    parser.add_argument("--top-n", type=int, default=5,
+                        help="Number of top findings to show (default: 5)")
     parser.add_argument("--max-wins", type=int, default=10,
                         help="Max quick wins to show (default: 10)")
     parser.add_argument("--client-name", default="",

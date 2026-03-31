@@ -22,6 +22,10 @@ import subprocess
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+# Shared CSS generator (repo root — 4 levels up from this auditor directory)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
+from report_utils import get_styles
+
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger(__name__)
@@ -247,30 +251,7 @@ def write_html(report, path):
 <meta charset="UTF-8">
 <title>User Security Audit Report</title>
 <style>
-  /* === BRAND TOKENS — DO NOT CHANGE INDEPENDENTLY ===
-     brand-dark:   #1a1a2e  (headers, th, dark chrome)
-     body-text:    #333     (paragraph text)
-     body-bg:      #f5f6fa  (page background)
-     badge-radius: 8px
-     ================================================ */
-  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; background: #f5f6fa; color: #333; }}
-  .header {{ background: #1a1a2e; color: white; padding: 30px 40px; }}
-  .header h1 {{ margin: 0; font-size: 1.8em; }}
-  .header p {{ margin: 5px 0 0; opacity: 0.8; }}
-  .summary {{ display: flex; gap: 20px; padding: 20px 40px; flex-wrap: wrap; }}
-  .card {{ background: white; border-radius: 8px; padding: 20px 30px; flex: 1; min-width: 140px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); text-align: center; }}
-  .card .num {{ font-size: 2.5em; font-weight: bold; }}
-  .card .label {{ color: #666; font-size: 0.9em; margin-top: 4px; }}
-  .critical .num {{ color: #dc3545; }} .high .num {{ color: #fd7e14; }}
-  .medium .num {{ color: #ffc107; }} .low .num {{ color: #28a745; }}
-  .total .num {{ color: #3498db; }}
-  .table-wrap {{ padding: 0 40px 40px; overflow-x: auto; }}
-  table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }}
-  th {{ background: #1a1a2e; color: white; padding: 12px 15px; text-align: left; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.5px; }}
-  td {{ padding: 10px 15px; border-bottom: 1px solid #ecf0f1; vertical-align: top; }}
-  tr:last-child td {{ border-bottom: none; }}
-  tr:hover td {{ background: #f8f9ff; }}
-  .footer {{ text-align: center; padding: 20px; color: #999; font-size: 0.85em; }}
+{get_styles()}
 </style>
 </head>
 <body>
@@ -643,6 +624,11 @@ def audit(output_prefix='user_report', fmt='all'):
 
     # ── Sort and summarise ────────────────────────────────────────────────────
     findings.sort(key=lambda x: x['score'], reverse=True)
+
+    # Canonical schema fields (P1-3): exec_summary aggregates on these
+    for f in findings:
+        f.setdefault('risk_level', f.get('severity', 'LOW'))
+        f.setdefault('remediation', f.get('recommendation', ''))
 
     risk_counts = {'CRITICAL': 0, 'HIGH': 0, 'MEDIUM': 0, 'LOW': 0}
     for f in findings:
