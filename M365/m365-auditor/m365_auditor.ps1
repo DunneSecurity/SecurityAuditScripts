@@ -261,7 +261,7 @@ function Get-M365OAuthConsentFindings {
 
     # AllowedToCreateApps does not directly govern OAuth consent, but combined with
     # unrestricted grant policies it indicates a permissive posture.
-    $hasPermissiveGrant = $legacyConsent.Count -gt 0
+    $hasPermissiveGrant = @($legacyConsent).Count -gt 0
 
     if ($hasPermissiveGrant) {
         $findings.Add([PSCustomObject]@{
