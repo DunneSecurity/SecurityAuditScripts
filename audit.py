@@ -22,7 +22,8 @@ import time
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import date
+import json
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -359,7 +360,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     opts.add_argument("--client",  default="audit",      metavar="NAME", help="Client name for output folder (default: audit)")
     opts.add_argument("--output",  default="./reports/", metavar="DIR",  help="Base output directory (default: ./reports/)")
     opts.add_argument("--profile", default=None,         metavar="NAME", help="AWS CLI profile name")
-    opts.add_argument("--domain",  default=None, metavar="NAME", help="Domain for email security audit (e.g. acme.ie)")
+    opts.add_argument("--domain",  default=None, metavar="NAME", help="Target domain for email/SSL/HTTP-headers auditors (e.g. acme.ie)")
     opts.add_argument("--regions", nargs="+",            metavar="REGION", help="AWS regions (passed to multi-region auditors)")
     opts.add_argument("--format",  default="all",        choices=["json", "html", "all"], help="Report format (default: all)")
     opts.add_argument("--workers", type=int, default=4,  metavar="N",    help="Parallel worker threads (default: 4)")
@@ -436,6 +437,17 @@ def preflight_check(selected: List[str], args: argparse.Namespace) -> bool:
             )
         else:
             console.print("[green]✓ Running as root[/green] — Linux auditors ready")
+
+    domain_auditors = [
+        name for name in selected
+        if AUDITOR_MAP.get(name) and AUDITOR_MAP[name].requires_domain
+    ]
+    if domain_auditors and not args.domain:
+        names = ", ".join(f"--{n.replace('_', '-')}" for n in domain_auditors)
+        errors.append(
+            f"Auditors {names} require --domain\n"
+            f"  Fix: add --domain acme.ie to your command"
+        )
 
     if errors:
         console.print("\n[bold red]Pre-flight checks failed — fix these before running:[/bold red]\n")
@@ -716,15 +728,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     print_banner()
     selected, show_ps1 = select_auditors(args)
 
-    # Validate that any auditor with requires_domain=True has --domain supplied.
-    # Adding a new domain-requiring auditor? Set requires_domain=True in AUDITOR_MAP —
-    # no changes needed here.
-    for key in selected:
-        if AUDITOR_MAP.get(key) and AUDITOR_MAP[key].requires_domain and not args.domain:
-            flag = f"--{key.replace('_', '-')}"
-            console.print(f"[bold red]error:[/bold red] {flag} requires --domain (e.g. --domain acme.ie)")
-            return 1
-
     if not selected and not show_ps1:
         console.print(
             "[red]No auditors selected.[/red] "
@@ -750,6 +753,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     results: List[AuditorResult] = []
     if selected:
         results = run_parallel(selected, client_dir, args)
+        # Write manifest so exec_summary can distinguish "not run" from "no findings"
+        manifest = {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "client": args.client,
+            "auditors_attempted": selected,
+        }
+        manifest_path = client_dir / "audit_manifest.json"
+        manifest_path.write_text(json.dumps(manifest, indent=2))
+        os.chmod(manifest_path, 0o600)
 
     html_path: Optional[Path] = None
     if results:

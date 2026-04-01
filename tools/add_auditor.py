@@ -364,6 +364,47 @@ def add_to_exec_summary(output_prefix):
     print(f"  [UPDATE] exec_summary.py — added '{output_prefix}.json'")
 
 
+# Pytest paths that need to be added per category (azure/windows use Pester, not pytest)
+_PYTEST_PATHS = {
+    "network": "Network/",
+    "email":   "Email/",
+}
+
+
+def add_to_ci_yml(category):
+    """Add the category test path to the pytest command in ci.yml if absent."""
+    pytest_path = _PYTEST_PATHS.get(category)
+    if not pytest_path:
+        return  # linux/aws already in CI; azure/windows use Pester
+
+    ci_yml = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+    if not ci_yml.exists():
+        print(f"  [SKIP] .github/workflows/ci.yml not found — add {pytest_path} manually")
+        return
+
+    content = ci_yml.read_text()
+    # Find the pytest run line
+    match = re.search(r'(        run: pytest )([^\n]+)', content)
+    if not match:
+        print(f"  [SKIP] Could not find pytest run line in ci.yml — add {pytest_path} manually")
+        return
+
+    current_line = match.group(2)
+    if pytest_path in current_line:
+        print(f"  [SKIP] ci.yml already includes {pytest_path}")
+        return
+
+    # Insert before the first occurrence of tests/ to keep paths grouped
+    if "tests/" in current_line:
+        new_line = current_line.replace("tests/", f"{pytest_path} tests/")
+    else:
+        new_line = current_line + f" {pytest_path}"
+
+    new_content = content[:match.start(2)] + new_line + content[match.end(2):]
+    ci_yml.write_text(new_content)
+    print(f"  [UPDATE] .github/workflows/ci.yml — added {pytest_path} to pytest path")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Scaffold a new SecurityAuditScripts auditor",
@@ -409,6 +450,7 @@ Examples:
     script_path = create_stub(short_name, title, script_name, dir_path, output_prefix, category)
     add_to_audit_py(auditor_key, script_path, output_prefix)
     add_to_exec_summary(output_prefix)
+    add_to_ci_yml(category)
 
     print(f"\nDone. Next steps:")
     print(f"  1. Implement run_checks() in {script_path.name}")

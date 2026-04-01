@@ -282,21 +282,55 @@ def check_docker_iptables(findings):
         pass
 
 
-def check_firewall_persistence(findings):
-    """Check if firewall rules will survive reboot."""
-    # Check for iptables-persistent or netfilter-persistent
-    out, rc = run_command(['systemctl', 'is-enabled', 'netfilter-persistent'])
-    if rc != 0:
-        out2, rc2 = run_command(['systemctl', 'is-enabled', 'iptables'])
-        if rc2 != 0:
+def check_firewall_persistence(findings, backend='iptables'):
+    """Check if firewall rules will survive reboot (backend-aware)."""
+    if backend == 'nftables':
+        _, rc = run_command(['systemctl', 'is-enabled', 'nftables'])
+        if rc != 0:
             findings.append({
                 'finding_type': 'FirewallRulesFlushable',
-                'detail': 'Neither netfilter-persistent nor iptables service is enabled — firewall rules may be lost on reboot.',
+                'detail': 'nftables service is not enabled — ruleset will be lost on reboot.',
                 'score': 3,
                 'severity': severity_label(3),
-                'recommendation': 'Install iptables-persistent and save rules: apt install iptables-persistent && netfilter-persistent save',
+                'recommendation': 'Enable nftables persistence: systemctl enable nftables && nft list ruleset > /etc/nftables.conf',
                 'cis_control': 'CIS 12',
             })
+    elif backend == 'ufw':
+        _, rc = run_command(['systemctl', 'is-enabled', 'ufw'])
+        if rc != 0:
+            findings.append({
+                'finding_type': 'FirewallRulesFlushable',
+                'detail': 'ufw service is not enabled — firewall will not start on reboot.',
+                'score': 3,
+                'severity': severity_label(3),
+                'recommendation': 'Enable ufw on boot: systemctl enable ufw',
+                'cis_control': 'CIS 12',
+            })
+    elif backend == 'firewalld':
+        _, rc = run_command(['systemctl', 'is-enabled', 'firewalld'])
+        if rc != 0:
+            findings.append({
+                'finding_type': 'FirewallRulesFlushable',
+                'detail': 'firewalld service is not enabled — firewall will not start on reboot.',
+                'score': 3,
+                'severity': severity_label(3),
+                'recommendation': 'Enable firewalld on boot: systemctl enable firewalld',
+                'cis_control': 'CIS 12',
+            })
+    else:
+        # iptables / unknown — check netfilter-persistent or iptables service
+        _, rc = run_command(['systemctl', 'is-enabled', 'netfilter-persistent'])
+        if rc != 0:
+            _, rc2 = run_command(['systemctl', 'is-enabled', 'iptables'])
+            if rc2 != 0:
+                findings.append({
+                    'finding_type': 'FirewallRulesFlushable',
+                    'detail': 'Neither netfilter-persistent nor iptables service is enabled — firewall rules may be lost on reboot.',
+                    'score': 3,
+                    'severity': severity_label(3),
+                    'recommendation': 'Install iptables-persistent and save rules: apt install iptables-persistent && netfilter-persistent save',
+                    'cis_control': 'CIS 12',
+                })
 
 
 # ── Output formatters ─────────────────────────────────────────────────────────
@@ -435,7 +469,7 @@ def audit(output_prefix='fw_report', fmt='all'):
     check_auditd(findings)
     check_syslog(findings)
     check_docker_iptables(findings)
-    check_firewall_persistence(findings)
+    check_firewall_persistence(findings, backend=backend)
 
     # Ensure all findings have required fields
     for f in findings:

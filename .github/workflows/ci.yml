@@ -24,7 +24,7 @@ jobs:
         run: pip install -r requirements-test.txt
 
       - name: Run tests
-        run: pytest AWS/ OnPrem/Linux/ tests/ -v --import-mode=importlib
+        run: pytest AWS/ OnPrem/Linux/ Network/ Email/ tests/ -v --import-mode=importlib
 
   pester:
     runs-on: windows-latest
@@ -38,4 +38,4 @@ jobs:
 
       - name: Run Pester tests
         shell: pwsh
-        run: Invoke-Pester -Path Azure, OnPrem/Windows -Output Detailed
+        run: Invoke-Pester -Path Azure, OnPrem/Windows, M365 -Output Detailed

@@ -174,11 +174,16 @@ _SEVERITY_RANK = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
 
 def compute_pillar_stats(pillar_name, report):
     """Compute risk counts and overall risk level for a single pillar report."""
-    findings = report.get("findings", [])
+    raw_findings = report.get("findings", [])
+    findings = []
+    for f in raw_findings:
+        try:
+            findings.append(validate_finding(f))
+        except (ValueError, TypeError) as exc:
+            log.warning("Skipping malformed finding in %s pillar: %s", pillar_name, exc)
     counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
     for f in findings:
-        # Bug 1 fix: some reports use "severity" instead of "risk_level"
-        rl = f.get("risk_level") or f.get("severity", "LOW")
+        rl = f.get("risk_level", "LOW")
         counts[rl] = counts.get(rl, 0) + 1
 
     if counts["CRITICAL"] > 0:
@@ -226,6 +231,7 @@ import sys as _sys
 import os as _os
 _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scoring import compute_overall_score  # noqa: E402
+from schema import validate_finding        # noqa: E402
 
 
 def get_top_findings(all_findings, n=10):
@@ -290,7 +296,8 @@ def get_quick_wins(all_findings, max_wins=10):
 
 def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
                generated_at, path, client_name="", assessor="", scope="",
-               grade_note="", modules_scanned=None):
+               grade_note="", modules_scanned=None, not_run_pillars=None,
+               baseline_data=None):
     """Write executive summary HTML report to path with 0o600 permissions."""
     grade_colour = GRADE_COLOURS.get(grade, "#6c757d")
     is_capped = bool(grade_note)
@@ -313,6 +320,16 @@ def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
           </div>
           <div class="pillar-total">{ps['total']} resources checked</div>
         </div>"""
+    # Not-run pillar cards (auditor attempted but produced no report JSON)
+    for pname in (not_run_pillars or []):
+        label = html_lib.escape(PILLAR_LABELS.get(pname, pname.upper()))
+        pillar_cards_html += (
+            f'<div class="pillar-card" style="border-left:5px solid #adb5bd;opacity:0.65">'
+            f'<div class="pillar-name">{label}</div>'
+            f'<div class="pillar-risk" style="color:#adb5bd">NOT RUN</div>'
+            f'<div class="pillar-total" style="color:#adb5bd">Auditor ran but no report found</div>'
+            f'</div>'
+        )
 
     # Top findings table rows
     finding_rows = ""
@@ -342,7 +359,7 @@ def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
                 f'<div class="flag-item"><span class="flag-text">{html_lib.escape(flag)}</span></div>'
             )
         finding_rows += (
-            f'<tr>'
+            f'<tr data-risk="{risk}">'
             f'<td>{html_lib.escape(PILLAR_LABELS.get(f.get("pillar", ""), f.get("pillar", "").upper()))}</td>'
             f'<td><span style="background:{colour};color:#fff;padding:2px 8px;border-radius:4px;font-size:0.8em">{risk}</span></td>'
             f'<td><code>{html_lib.escape(str(resource))}</code></td>'
@@ -436,6 +453,40 @@ def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
         coverage_html = (f'<p class="coverage-note">Score based on {modules_scanned} of '
                          f'{total_modules} audit modules.</p>')
 
+    # Diff section (item 9) — only rendered when baseline_data is provided
+    diff_section_html = ""
+    if baseline_data:
+        baseline_findings = {
+            (f.get("pillar", ""), f.get("finding_type") or f.get("check") or f.get("param") or "")
+            for f in baseline_data.get("top_findings", [])
+        }
+        current_findings = {
+            (f.get("pillar", ""), f.get("finding_type") or f.get("check") or f.get("param") or "")
+            for f in top_findings
+        }
+        fixed = baseline_findings - current_findings
+        new_issues = current_findings - baseline_findings
+        baseline_score = baseline_data.get("score", "?")
+        baseline_grade = baseline_data.get("grade", "?")
+
+        fixed_rows = "".join(
+            f'<div class="diff-row diff-fixed">&#10003; {html_lib.escape(p.upper())} — {html_lib.escape(t)}</div>'
+            for p, t in sorted(fixed) if p or t
+        ) or '<div class="diff-row" style="color:#888">No newly fixed findings in top-N list.</div>'
+        new_rows = "".join(
+            f'<div class="diff-row diff-new">&#x2715; {html_lib.escape(p.upper())} — {html_lib.escape(t)}</div>'
+            for p, t in sorted(new_issues) if p or t
+        ) or '<div class="diff-row" style="color:#888">No new findings since baseline.</div>'
+
+        diff_section_html = (
+            f'<div class="section"><div class="diff-section">'
+            f'<h2 style="font-size:1.1em;margin-bottom:16px">&#128200; Change Since Baseline '
+            f'(Score: {baseline_score} {baseline_grade} &rarr; {overall_score} {grade})</h2>'
+            f'<h3 class="diff-fixed">&#10003; Fixed ({len(fixed)})</h3>{fixed_rows}'
+            f'<h3 class="diff-new" style="margin-top:14px">&#x2715; New ({len(new_issues)})</h3>{new_rows}'
+            f'</div></div>'
+        )
+
     html_content = f"""<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><title>Security Executive Summary{' — ' + html_lib.escape(client_name) if client_name else ''}</title>
@@ -485,12 +536,31 @@ def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
   .crit-badge {{ background:#dc3545; color:#fff; padding:2px 8px; border-radius:4px; font-size:0.78em; font-weight:700; letter-spacing:0.5px; }}
   .crit-detail {{ font-size:0.88em; color:#333; margin-bottom:4px; }}
   .crit-rem {{ font-size:0.82em; color:#555; font-style:italic; }}
+  .filter-bar {{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }}
+  .filter-btn {{ padding:4px 14px; border:1px solid #ccc; border-radius:16px; background:#fff;
+                cursor:pointer; font-size:0.82em; font-weight:600; transition:background 0.15s; }}
+  .filter-btn:hover {{ background:#f0f4ff; }}
+  .filter-btn.active {{ color:#fff; border-color:transparent; }}
+  .filter-btn[data-f="ALL"].active {{ background:#1a1a2e; }}
+  .filter-btn[data-f="CRITICAL"].active {{ background:#dc3545; }}
+  .filter-btn[data-f="HIGH"].active {{ background:#fd7e14; }}
+  .filter-btn[data-f="MEDIUM"].active {{ background:#c9a000; }}
+  .filter-btn[data-f="LOW"].active {{ background:#28a745; }}
+  tr[data-risk].hidden {{ display:none; }}
+  .diff-section {{ background:#fff; border-radius:8px; padding:20px 24px;
+                   margin:0 40px 24px; box-shadow:0 2px 8px rgba(0,0,0,.06); }}
+  .diff-section h3 {{ font-size:1em; margin:0 0 10px; }}
+  .diff-fixed {{ color:#28a745; font-weight:700; }}
+  .diff-new {{ color:#dc3545; font-weight:700; }}
+  .diff-row {{ font-size:0.85em; padding:4px 0; border-bottom:1px solid #f5f5f5; }}
   @media print {{
     body {{ font-size:10pt; }}
     .header {{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }}
     .card {{ box-shadow:none; border:1px solid #ddd; }}
     table {{ box-shadow:none; }}
     .footer {{ display:none; }}
+    .filter-bar {{ display:none; }}
+    tr[data-risk].hidden {{ display:table-row !important; }}
   }}
 </style>
 </head>
@@ -524,7 +594,14 @@ def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
 
 <div class="section">
   <h2>Top Critical &amp; High Findings</h2>
-  <table>
+  <div class="filter-bar">
+    <button class="filter-btn active" data-f="ALL" onclick="applyFilter('ALL')">All</button>
+    <button class="filter-btn" data-f="CRITICAL" onclick="applyFilter('CRITICAL')">Critical</button>
+    <button class="filter-btn" data-f="HIGH" onclick="applyFilter('HIGH')">High</button>
+    <button class="filter-btn" data-f="MEDIUM" onclick="applyFilter('MEDIUM')">Medium</button>
+    <button class="filter-btn" data-f="LOW" onclick="applyFilter('LOW')">Low</button>
+  </div>
+  <table id="findings-tbl">
     <thead><tr><th>Pillar</th><th>Risk</th><th>Resource</th><th>Detail &amp; Remediation</th></tr></thead>
     <tbody>{finding_rows or no_top_findings}</tbody>
   </table>
@@ -538,6 +615,8 @@ def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
   </table>
 </div>
 
+{diff_section_html}
+
 <div class="section">
   <h2>Recommended Next Steps</h2>
   <ol class="next-steps">
@@ -549,6 +628,16 @@ def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
 </div>
 
 <div class="footer">Confidential &nbsp;|&nbsp; {footer_client} &nbsp;|&nbsp; {footer_assessor}</div>
+<script>
+function applyFilter(f) {{
+  document.querySelectorAll('#findings-tbl tbody tr[data-risk]').forEach(function(r) {{
+    r.classList.toggle('hidden', f !== 'ALL' && r.dataset.risk !== f);
+  }});
+  document.querySelectorAll('.filter-btn').forEach(function(b) {{
+    b.classList.toggle('active', b.dataset.f === f);
+  }});
+}}
+</script>
 </body>
 </html>"""
 
@@ -577,7 +666,7 @@ def warn_missing_azure_windows(input_dir):
 
 
 def run(input_dir=".", output_path="exec_summary.html", top_n=5, max_wins=10,
-        client_name="", assessor="", scope=""):
+        client_name="", assessor="", scope="", baseline_path=""):
     """Discover reports, compute stats, write HTML summary."""
     report_paths = discover_reports(input_dir)
     if not report_paths:
@@ -586,6 +675,7 @@ def run(input_dir=".", output_path="exec_summary.html", top_n=5, max_wins=10,
 
     pillar_stats_list = []
     all_findings_flat = []
+    found_pillars = set()
 
     for rpath in report_paths:
         pillar_name = os.path.basename(rpath).replace("_report.json", "")
@@ -595,15 +685,53 @@ def run(input_dir=".", output_path="exec_summary.html", top_n=5, max_wins=10,
             continue
         stats = compute_pillar_stats(pillar_name, report)
         pillar_stats_list.append(stats)
+        found_pillars.add(pillar_name)
         for f in report.get("findings", []):
             all_findings_flat.append({**f, "pillar": pillar_name})
         log.info(f"Loaded {pillar_name}: {stats['total']} findings "
                  f"(CRITICAL={stats['critical']} HIGH={stats['high']})")
 
+    # Load manifest to identify auditors that were attempted but produced no report
+    not_run_pillars = []
+    manifest_path = os.path.join(input_dir, "audit_manifest.json")
+    if os.path.exists(manifest_path):
+        manifest = load_report(manifest_path)
+        if manifest:
+            attempted = manifest.get("auditors_attempted", [])
+            # Map auditor keys → pillar names (strip linux_ prefix used in AUDITOR_MAP)
+            for key in attempted:
+                pillar = key.replace("linux_", "") if key.startswith("linux_") else key
+                if pillar not in found_pillars:
+                    not_run_pillars.append(pillar)
+
     modules_scanned = len(pillar_stats_list)
     score, grade, grade_note = compute_overall_score(pillar_stats_list, modules_scanned=modules_scanned)
     top_findings = get_top_findings(all_findings_flat, n=top_n)
     quick_wins = get_quick_wins(all_findings_flat, max_wins=max_wins)
+
+    # Load baseline for diff section
+    baseline_data = None
+    if baseline_path and os.path.exists(baseline_path):
+        baseline_data = load_report(baseline_path)
+        if baseline_data is None:
+            log.warning(f"Could not load baseline: {baseline_path}")
+
+    # Write machine-readable JSON sidecar for future baseline comparisons
+    sidecar_path = os.path.splitext(output_path)[0] + "_data.json"
+    sidecar = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "score": score,
+        "grade": grade,
+        "pillar_stats": pillar_stats_list,
+        "top_findings": top_findings,
+    }
+    try:
+        with open(sidecar_path, "w") as f:
+            json.dump(sidecar, f, indent=2, default=str)
+        os.chmod(sidecar_path, 0o600)
+        log.info(f"Data sidecar: {sidecar_path}")
+    except OSError as exc:
+        log.warning(f"Could not write sidecar: {exc}")
 
     write_html(
         overall_score=score,
@@ -618,6 +746,8 @@ def run(input_dir=".", output_path="exec_summary.html", top_n=5, max_wins=10,
         scope=scope,
         grade_note=grade_note,
         modules_scanned=modules_scanned,
+        not_run_pillars=not_run_pillars,
+        baseline_data=baseline_data,
     )
 
     cap_info = f" [{grade_note}]" if grade_note else ""
@@ -645,11 +775,15 @@ def main():
                         help="Assessor / consultant name to display in the report")
     parser.add_argument("--scope", default="",
                         help="Scope description shown as an intro paragraph in the report")
+    parser.add_argument("--baseline", default="",
+                        metavar="FILE",
+                        help="Path to a previous exec_summary_data.json for diff comparison")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     run(input_dir=args.input_dir, output_path=args.output,
         top_n=args.top_n, max_wins=args.max_wins,
-        client_name=args.client_name, assessor=args.assessor, scope=args.scope)
+        client_name=args.client_name, assessor=args.assessor, scope=args.scope,
+        baseline_path=args.baseline)
 
 
 if __name__ == "__main__":
