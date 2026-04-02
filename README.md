@@ -335,7 +335,33 @@ python3 AWS/rds-auditor/rds_auditor.py --format all --output rds_report
 python3 tools/exec_summary.py --input-dir . --output exec_summary.html
 ```
 
-### Azure
+### Azure / Windows / M365 (Orchestrator)
+
+`Run-Audit.ps1` is the PowerShell equivalent of `audit.py` — a single entry point that runs all relevant PS1 auditors, saves output to a client folder, and optionally generates the executive summary (requires Python).
+
+```powershell
+git clone https://github.com/Decdd19/SecurityAuditScripts.git
+cd SecurityAuditScripts
+Connect-AzAccount   # authenticate once
+
+# All Azure auditors for a client
+.\Run-Audit.ps1 -Client "Acme Corp" -Azure
+
+# All Azure auditors across every subscription + open HTML report
+.\Run-Audit.ps1 -Client "Acme Corp" -Azure -AllSubscriptions -Open
+
+# Azure + M365 + Windows on-prem (run as admin)
+.\Run-Audit.ps1 -Client "Acme Corp" -All -OutputDir C:\Reports
+
+# M365 only, skip exec summary
+.\Run-Audit.ps1 -Client "Acme Corp" -M365 -SkipSummary
+```
+
+**Flags:** `-Azure` (9 auditors) · `-M365` · `-Windows` (LAPS) · `-All` · `-AllSubscriptions` · `-OutputDir` · `-SkipSummary` · `-Open`
+
+> **Prerequisites:** PowerShell 7+ · Az module · `Connect-AzAccount` already run · Python 3 for exec summary (optional)
+
+### Azure (individual scripts)
 ```powershell
 git clone https://github.com/Decdd19/SecurityAuditScripts.git
 cd SecurityAuditScripts
