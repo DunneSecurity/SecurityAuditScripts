@@ -15,7 +15,8 @@ OnPrem/
 │   ├── smbsigning-auditor/   # SMB signing enforcement (NTLM relay prevention)
 │   ├── auditpolicy-auditor/  # Windows audit policy subcategory checks
 │   ├── bitlocker-auditor/    # BitLocker drive encryption status
-│   └── laps-auditor/         # LAPS deployment coverage and configuration
+│   ├── laps-auditor/         # LAPS deployment coverage and configuration
+│   └── winpatch-auditor/     # Patch currency, uptime, WU config, pending updates
 └── Linux/
     ├── linux-user-auditor/   # Linux users, sudo, SSH, and password policy
     ├── linux-firewall-auditor/ # iptables/nftables/ufw/firewalld + auditd/syslog
@@ -37,6 +38,7 @@ OnPrem/
 | [auditpolicy_auditor.ps1](./Windows/auditpolicy-auditor/) | Windows | No | PowerShell |
 | [bitlocker_auditor.ps1](./Windows/bitlocker-auditor/) | Windows | No | PowerShell |
 | [laps_auditor.ps1](./Windows/laps-auditor/) | Windows | Yes (domain-joined) | PowerShell |
+| [winpatch_auditor.ps1](./Windows/winpatch-auditor/) | Windows | No | PowerShell |
 | [linux_user_auditor.py](./Linux/linux-user-auditor/) | Linux | No | Python |
 | [linux_firewall_auditor.py](./Linux/linux-firewall-auditor/) | Linux | No | Python |
 | [linux_sysctl_auditor.py](./Linux/linux-sysctl-auditor/) | Linux | No | Python |

@@ -46,8 +46,8 @@ graph TD
         M["CA MFA · Legacy Auth · Mailbox Forwarding · OAuth Consent\nMFA Coverage · Admin Roles · Guest Access"]
     end
 
-    subgraph Windows["🪟 Windows  —  7 auditors  (PowerShell)"]
-        W["AD · Local Users · Firewall · SMB Signing\nAudit Policy · BitLocker · LAPS"]
+    subgraph Windows["🪟 Windows  —  8 auditors  (PowerShell)"]
+        W["AD · Local Users · Firewall · SMB Signing\nAudit Policy · BitLocker · LAPS · Patch"]
     end
 
     subgraph Email["📧 Email  —  1 auditor  (Python · dnspython)"]
@@ -192,7 +192,8 @@ SecurityAuditScripts/
     │   ├── smbsigning-auditor/         # SMB signing enforcement, NTLM relay prevention
     │   ├── auditpolicy-auditor/        # Audit policy subcategories (process, logon, privilege)
     │   ├── bitlocker-auditor/          # BitLocker drive encryption status and method
-    │   └── laps-auditor/               # LAPS deployment coverage and configuration
+    │   ├── laps-auditor/               # LAPS deployment coverage and configuration
+    │   └── winpatch-auditor/          # Patch currency, uptime, WU config, pending updates
     └── Linux/
         ├── linux-user-auditor/         # Users, sudo, SSH, password policy
         ├── linux-firewall-auditor/     # iptables/nftables/ufw/firewalld, auditd, syslog
@@ -256,6 +257,7 @@ SecurityAuditScripts/
 | [Audit Policy Auditor](./OnPrem/Windows/auditpolicy-auditor/) | Checks 15 critical Windows audit policy subcategories (logon, process creation, privilege use, etc.) against CIS baseline. | JSON, CSV, HTML |
 | [BitLocker Auditor](./OnPrem/Windows/bitlocker-auditor/) | Audits BitLocker drive encryption status, encryption method strength, TPM protector, and recovery password configuration. | JSON, CSV, HTML |
 | [LAPS Auditor](./OnPrem/Windows/laps-auditor/) | Checks LAPS deployment coverage across domain-joined computers — managed vs unmanaged machines, password age, and expiry configuration. | JSON, CSV, HTML |
+| [Windows Patch Auditor](./OnPrem/Windows/winpatch-auditor/) | Checks last patch age via `Get-HotFix`, system uptime and reboot state, Windows Update service and auto-update policy, and enumerates pending security updates via the Windows Update Agent COM API. | JSON, CSV, HTML |
 
 ### On-Premises — Linux
 

@@ -76,6 +76,7 @@ KNOWN_PATTERNS = [
     "azbackup_report.json",
     # Windows on-prem
     "laps_report.json",
+    "winpatch_report.json",
 ]
 
 # Azure/Windows patterns that require manual copy-back from a Windows machine.
@@ -98,6 +99,7 @@ AZURE_WINDOWS_PATTERNS = [
     "policy_report.json",
     "azbackup_report.json",
     "laps_report.json",
+    "winpatch_report.json",
 ]
 
 # Human-readable names for display
@@ -141,6 +143,7 @@ PILLAR_LABELS = {
     "policy": "Azure Policy",
     "azbackup": "Azure Backup",
     "laps": "Windows LAPS",
+    "winpatch": "Windows Patch Status",
 }
 
 GRADE_COLOURS = {
