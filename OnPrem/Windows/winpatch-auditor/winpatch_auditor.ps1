@@ -379,12 +379,122 @@ function Get-WinPatchFindings {
 }
 
 # ---------------------------------------------------------------------------
-# Output helpers (stubs — implemented in Task 5)
+# Output helpers
 # ---------------------------------------------------------------------------
-function Write-JsonReport    { param($ReportData, $Path) }
-function Write-CsvReport     { param($Findings, $Path) }
-function Write-HtmlReport    { param($Findings, $Summary, $Path) }
-function Write-TerminalSummary { param($Findings, $Summary) }
+function Write-JsonReport {
+    param([Parameter(Mandatory)][hashtable]$ReportData, [string]$Path)
+    $ReportData | ConvertTo-Json -Depth 10 | Out-File $Path -Encoding UTF8
+    Set-RestrictedPermissions $Path
+}
+
+function Write-CsvReport {
+    param([Parameter(Mandatory)][array]$Findings, [string]$Path)
+    $Findings | Select-Object FindingType, Resource, Severity, Score, Description, Recommendation, cis_control |
+        ConvertTo-Csv -NoTypeInformation | Out-File $Path -Encoding UTF8
+    Set-RestrictedPermissions $Path
+}
+
+function Write-HtmlReport {
+    param(
+        [Parameter(Mandatory)][array]$Findings,
+        [hashtable]$Summary = @{},
+        [string]$Path
+    )
+    $counts = @{ CRITICAL = 0; HIGH = 0; MEDIUM = 0; LOW = 0 }
+    foreach ($f in $Findings) { if ($counts.ContainsKey($f.Severity)) { $counts[$f.Severity]++ } }
+
+    $daysSince   = if ($null -ne $Summary.days_since_patch) { "$($Summary.days_since_patch)d ago" } else { 'Unknown' }
+    $lastPatch   = if ($null -ne $Summary.last_patch_date)  { $Summary.last_patch_date }  else { 'Unknown' }
+    $lastReboot  = if ($null -ne $Summary.last_reboot)      { $Summary.last_reboot }      else { 'Unknown' }
+    $uptimeDays  = if ($null -ne $Summary.uptime_days)      { "$($Summary.uptime_days)d" } else { 'Unknown' }
+    $pendingTotal = $Summary.pending_updates.total
+    $rebootFlag  = if ($Summary.pending_reboot) { 'Yes' } else { 'No' }
+    $rebootColour = if ($Summary.pending_reboot) { '#dc3545' } else { '#28a745' }
+    $patchColour  = if ($counts.CRITICAL -gt 0) { '#dc3545' } elseif ($counts.HIGH -gt 0) { '#fd7e14' } else { '#28a745' }
+    $scannedAt   = Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC'
+
+    $rows = foreach ($f in $Findings) {
+        $colour = Get-SeverityColour $f.Severity
+        "<tr>
+            <td>$([System.Web.HttpUtility]::HtmlEncode($f.FindingType))</td>
+            <td>$([System.Web.HttpUtility]::HtmlEncode($f.Resource))</td>
+            <td>$([System.Web.HttpUtility]::HtmlEncode($f.Description))</td>
+            <td><span style='background:$colour;color:#fff;padding:2px 6px;border-radius:3px;font-weight:bold'>$($f.Severity)</span></td>
+            <td>$([System.Web.HttpUtility]::HtmlEncode($f.Score))</td>
+            <td>$([System.Web.HttpUtility]::HtmlEncode($f.Recommendation))</td>
+        </tr>"
+    }
+
+    $html = @"
+<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>
+<title>Windows Patch Audit Report</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;background:#f5f6fa;color:#333}
+.header{background:#1a1a2e;color:#fff;padding:30px 40px}
+.header h1{margin:0;font-size:1.8em}.header p{margin:5px 0 0;opacity:0.8}
+.cards{display:flex;gap:16px;flex-wrap:wrap;padding:20px 40px}
+.card{background:#fff;border-radius:8px;padding:16px 24px;box-shadow:0 2px 8px rgba(0,0,0,0.08);min-width:130px;text-align:center}
+.val{font-size:2em;font-weight:bold}.lbl{color:#666;font-size:.85em;margin-top:4px}
+.tbl-wrap{padding:0 40px 20px}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08)}
+th{background:#1a1a2e;color:#fff;padding:12px 15px;text-align:left;font-size:0.85em;text-transform:uppercase;letter-spacing:0.5px}
+td{padding:10px 15px;border-bottom:1px solid #ecf0f1;vertical-align:top}tr:last-child td{border-bottom:none}tr:hover td{background:#f8f9ff}
+.footer{text-align:center;padding:20px;color:#999;font-size:0.85em}
+</style></head><body>
+<div class='header'><h1>Windows Patch Audit Report</h1>
+<p>Host: $($Summary.hostname) &nbsp;|&nbsp; Generated: $scannedAt</p>
+</div>
+<div class='cards'>
+  <div class='card'><div class='val' style='color:$patchColour'>$lastPatch</div><div class='lbl'>Last Patched ($daysSince)</div></div>
+  <div class='card'><div class='val'>$uptimeDays</div><div class='lbl'>Uptime (last reboot: $lastReboot)</div></div>
+  <div class='card'><div class='val' style='color:$rebootColour'>$rebootFlag</div><div class='lbl'>Pending Reboot</div></div>
+  <div class='card'><div class='val'>$pendingTotal</div><div class='lbl'>Pending Updates</div></div>
+  <div class='card'><div class='val' style='color:#dc3545'>$($counts.CRITICAL)</div><div class='lbl'>CRITICAL</div></div>
+  <div class='card'><div class='val' style='color:#fd7e14'>$($counts.HIGH)</div><div class='lbl'>HIGH</div></div>
+  <div class='card'><div class='val' style='color:#ffc107'>$($counts.MEDIUM)</div><div class='lbl'>MEDIUM</div></div>
+  <div class='card'><div class='val' style='color:#28a745'>$($counts.LOW)</div><div class='lbl'>LOW</div></div>
+</div>
+<div class='tbl-wrap'>
+<table><thead><tr>
+  <th>Finding</th><th>Resource</th><th>Detail</th>
+  <th>Severity</th><th>Score</th><th>Recommendation</th>
+</tr></thead><tbody>
+$($rows -join "`n")
+</tbody></table>
+</div>
+<div class='footer'>Windows Patch Audit Report | Generated $scannedAt</div>
+</body></html>
+"@
+    $html | Out-File $Path -Encoding UTF8
+    Set-RestrictedPermissions $Path
+}
+
+function Write-TerminalSummary {
+    param([array]$Findings, [hashtable]$Summary)
+    $counts = @{ CRITICAL = 0; HIGH = 0; MEDIUM = 0; LOW = 0 }
+    foreach ($f in $Findings) { if ($counts.ContainsKey($f.Severity)) { $counts[$f.Severity]++ } }
+
+    $lastPatch  = if ($null -ne $Summary.last_patch_date) { "$($Summary.last_patch_date) ($($Summary.days_since_patch) days ago)" } else { 'Unknown' }
+    $reboot     = if ($Summary.pending_reboot) { 'Yes' } else { 'No' }
+    $pending    = $Summary.pending_updates
+    $pendingStr = if ($Summary.com_api_used) {
+        "$($pending.total) ($($pending.critical) Critical, $($pending.important) Important, $($pending.moderate) Moderate)"
+    } else { 'Not queried (use -MaxSearchSeconds > 0)' }
+
+    Write-Host ''
+    Write-Host '══════════════════════════════════════════════════════' -ForegroundColor Cyan
+    Write-Host '     WINDOWS PATCH AUDIT COMPLETE                     ' -ForegroundColor Cyan
+    Write-Host '══════════════════════════════════════════════════════' -ForegroundColor Cyan
+    Write-Host "  Hostname        : $($Summary.hostname)"              -ForegroundColor Cyan
+    Write-Host "  Last patched    : $lastPatch"                        -ForegroundColor Cyan
+    Write-Host "  Uptime          : $($Summary.uptime_days) days (last reboot: $($Summary.last_reboot))" -ForegroundColor Cyan
+    Write-Host "  Pending reboot  : $reboot"                           -ForegroundColor Cyan
+    Write-Host "  Pending updates : $pendingStr"                       -ForegroundColor Cyan
+    Write-Host "  Findings        : $($Findings.Count)"                -ForegroundColor Cyan
+    Write-Host "  CRITICAL: $($counts.CRITICAL)  HIGH: $($counts.HIGH)  MEDIUM: $($counts.MEDIUM)  LOW: $($counts.LOW)" -ForegroundColor Cyan
+    Write-Host '══════════════════════════════════════════════════════' -ForegroundColor Cyan
+    Write-Host ''
+}
 
 # ---------------------------------------------------------------------------
 # Main — skipped when dot-sourced by Pester
