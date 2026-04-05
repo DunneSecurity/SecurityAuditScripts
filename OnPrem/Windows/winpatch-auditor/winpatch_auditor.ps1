@@ -304,6 +304,72 @@ function Get-WinPatchFindings {
         Write-Warning "Could not check WSUS configuration: $_"
     }
 
+    # ------------------------------------------------------------------
+    # PATCH-07/08: Pending updates via Windows Update Agent COM API
+    # ------------------------------------------------------------------
+    if ($MaxSearchSeconds -gt 0) {
+        try {
+            $searcher = New-UpdateSearcher
+            $criteria = 'IsInstalled=0 AND IsHidden=0 AND Type=''Software'''
+            $searchResult = $searcher.Search($criteria)
+
+            $pendingCounts = @{ critical = 0; important = 0; moderate = 0; low = 0; total = 0 }
+            foreach ($update in $searchResult.Updates) {
+                $pendingCounts.total++
+                switch ($update.MsrcSeverity) {
+                    'Critical'  { $pendingCounts.critical++ }
+                    'Important' { $pendingCounts.important++ }
+                    'Moderate'  { $pendingCounts.moderate++ }
+                    default     { $pendingCounts.low++ }
+                }
+            }
+            $summary.pending_updates = $pendingCounts
+            $summary.com_api_used    = $true
+
+            if ($pendingCounts.critical -gt 0) {
+                $findings.Add([PSCustomObject]@{
+                    FindingType    = 'PendingSecurityUpdates'
+                    Resource       = 'Windows Update'
+                    Severity       = 'CRITICAL'
+                    Score          = 9
+                    Description    = "$($pendingCounts.total) pending update(s): $($pendingCounts.critical) Critical, $($pendingCounts.important) Important, $($pendingCounts.moderate) Moderate."
+                    Recommendation = 'Run Windows Update immediately and reboot to apply critical security patches.'
+                    cis_control    = 7
+                })
+            } elseif ($pendingCounts.important -gt 0) {
+                $findings.Add([PSCustomObject]@{
+                    FindingType    = 'PendingSecurityUpdates'
+                    Resource       = 'Windows Update'
+                    Severity       = 'HIGH'
+                    Score          = 7
+                    Description    = "$($pendingCounts.total) pending update(s): $($pendingCounts.important) Important, $($pendingCounts.moderate) Moderate."
+                    Recommendation = 'Schedule Windows Update installation and plan a reboot within the next maintenance window.'
+                    cis_control    = 7
+                })
+            } elseif ($pendingCounts.moderate -gt 0) {
+                $findings.Add([PSCustomObject]@{
+                    FindingType    = 'PendingSecurityUpdates'
+                    Resource       = 'Windows Update'
+                    Severity       = 'MEDIUM'
+                    Score          = 4
+                    Description    = "$($pendingCounts.total) pending update(s): $($pendingCounts.moderate) Moderate."
+                    Recommendation = 'Run Windows Update to apply pending moderate-severity updates.'
+                    cis_control    = 7
+                })
+            }
+        } catch {
+            $findings.Add([PSCustomObject]@{
+                FindingType    = 'WindowsUpdateQueryFailed'
+                Resource       = 'Windows Update COM API'
+                Severity       = 'MEDIUM'
+                Score          = 4
+                Description    = "Could not query Windows Update for pending patches: $_"
+                Recommendation = 'Ensure the Windows Update service (wuauserv) is running. Use -MaxSearchSeconds 0 to skip this check on air-gapped machines.'
+                cis_control    = 7
+            })
+        }
+    }
+
     # Compute overall risk
     if (@($findings | Where-Object { $_.Severity -eq 'CRITICAL' }).Count -gt 0) { $summary.overall_risk = 'CRITICAL' }
     elseif (@($findings | Where-Object { $_.Severity -eq 'HIGH' }).Count -gt 0)     { $summary.overall_risk = 'HIGH' }

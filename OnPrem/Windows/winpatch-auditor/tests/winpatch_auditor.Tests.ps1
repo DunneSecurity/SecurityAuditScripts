@@ -327,6 +327,72 @@ Describe 'Get-WinPatchFindings' {
         $finding | Should -BeNullOrEmpty
         $result.summary.wsus_server | Should -BeNullOrEmpty
     }
+
+    # ── PATCH-07: Pending security updates via COM API ────────────────────────
+
+    It '16. PATCH-07 flags CRITICAL when COM API returns a Critical pending update' {
+        Mock Get-HotFix {
+            @([PSCustomObject]@{ InstalledOn = (Get-Date).AddDays(-5); HotFixID = 'KB100' })
+        }
+        Mock Get-CimInstance { [PSCustomObject]@{ LastBootUpTime = (Get-Date).AddDays(-5) } }
+        Mock Get-Service { [PSCustomObject]@{ Status = 'Running'; StartType = 'Automatic' } }
+        Mock Get-ItemProperty { $null }
+        Mock New-UpdateSearcher {
+            $fakeUpdate = [PSCustomObject]@{ MsrcSeverity = 'Critical'; Title = 'Critical Security Update' }
+            $fakeResult = [PSCustomObject]@{ Updates = @($fakeUpdate) }
+            $fakeSearcher = [PSCustomObject]@{}
+            $fakeSearcher | Add-Member -MemberType ScriptMethod -Name Search -Value { param($criteria) $fakeResult }
+            return $fakeSearcher
+        }
+
+        $result  = Get-WinPatchFindings -MaxSearchSeconds 60
+        $finding = $result.findings | Where-Object FindingType -eq 'PendingSecurityUpdates'
+        $finding | Should -Not -BeNullOrEmpty
+        $finding.Severity | Should -Be 'CRITICAL'
+        $finding.Score    | Should -Be 9
+        $result.summary.com_api_used | Should -Be $true
+        $result.summary.pending_updates.critical | Should -Be 1
+    }
+
+    It '17. PATCH-07 produces no PendingSecurityUpdates finding when COM API returns empty' {
+        Mock Get-HotFix {
+            @([PSCustomObject]@{ InstalledOn = (Get-Date).AddDays(-5); HotFixID = 'KB200' })
+        }
+        Mock Get-CimInstance { [PSCustomObject]@{ LastBootUpTime = (Get-Date).AddDays(-5) } }
+        Mock Get-Service { [PSCustomObject]@{ Status = 'Running'; StartType = 'Automatic' } }
+        Mock Get-ItemProperty { $null }
+        Mock New-UpdateSearcher {
+            $fakeResult   = [PSCustomObject]@{ Updates = @() }
+            $fakeSearcher = [PSCustomObject]@{}
+            $fakeSearcher | Add-Member -MemberType ScriptMethod -Name Search -Value { param($criteria) $fakeResult }
+            return $fakeSearcher
+        }
+
+        $result  = Get-WinPatchFindings -MaxSearchSeconds 60
+        $finding = $result.findings | Where-Object FindingType -eq 'PendingSecurityUpdates'
+        $finding | Should -BeNullOrEmpty
+        $result.summary.com_api_used          | Should -Be $true
+        $result.summary.pending_updates.total | Should -Be 0
+    }
+
+    # ── PATCH-08: COM API failure ─────────────────────────────────────────────
+
+    It '18. PATCH-08 flags MEDIUM when COM API throws' {
+        Mock Get-HotFix {
+            @([PSCustomObject]@{ InstalledOn = (Get-Date).AddDays(-5); HotFixID = 'KB300' })
+        }
+        Mock Get-CimInstance { [PSCustomObject]@{ LastBootUpTime = (Get-Date).AddDays(-5) } }
+        Mock Get-Service { [PSCustomObject]@{ Status = 'Running'; StartType = 'Automatic' } }
+        Mock Get-ItemProperty { $null }
+        Mock New-UpdateSearcher { throw 'COM object not available' }
+
+        $result  = Get-WinPatchFindings -MaxSearchSeconds 60
+        $finding = $result.findings | Where-Object FindingType -eq 'WindowsUpdateQueryFailed'
+        $finding | Should -Not -BeNullOrEmpty
+        $finding.Severity | Should -Be 'MEDIUM'
+        $finding.Score    | Should -Be 4
+        $result.summary.com_api_used | Should -Be $false
+    }
 }
 
 Describe 'Get-SeverityLabel' {
