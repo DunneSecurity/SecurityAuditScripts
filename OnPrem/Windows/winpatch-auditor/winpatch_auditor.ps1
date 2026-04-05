@@ -100,7 +100,97 @@ function Get-WinPatchFindings {
         overall_risk             = 'LOW'
     }
 
-    # checks go here in later tasks
+    # ------------------------------------------------------------------
+    # PATCH-01: Last patch age
+    # ------------------------------------------------------------------
+    try {
+        $hotfixes = @(Get-HotFix | Where-Object { $null -ne $_.InstalledOn } | Sort-Object InstalledOn -Descending)
+        if ($hotfixes.Count -eq 0) {
+            $findings.Add([PSCustomObject]@{
+                FindingType    = 'LastPatchAge'
+                Resource       = 'System'
+                Severity       = 'CRITICAL'
+                Score          = 9
+                Description    = 'No installed hotfixes found. The system may have never been patched or patch history is unavailable.'
+                Recommendation = 'Run Windows Update immediately and ensure the Windows Update service is enabled.'
+                cis_control    = 7
+            })
+        } else {
+            $lastPatch   = $hotfixes[0]
+            $daysSince   = [int]($now - $lastPatch.InstalledOn).TotalDays
+            $summary.last_patch_date  = $lastPatch.InstalledOn.ToString('yyyy-MM-dd')
+            $summary.days_since_patch = $daysSince
+
+            if ($daysSince -gt 60) {
+                $findings.Add([PSCustomObject]@{
+                    FindingType    = 'LastPatchAge'
+                    Resource       = 'System'
+                    Severity       = 'CRITICAL'
+                    Score          = 9
+                    Description    = "Last patch installed $daysSince days ago ($($lastPatch.InstalledOn.ToString('yyyy-MM-dd'))). Systems should be patched at least monthly."
+                    Recommendation = 'Run Windows Update immediately. Enable automatic updates or establish a monthly patch cycle aligned with Microsoft Patch Tuesday.'
+                    cis_control    = 7
+                })
+            } elseif ($daysSince -gt 30) {
+                $findings.Add([PSCustomObject]@{
+                    FindingType    = 'LastPatchAge'
+                    Resource       = 'System'
+                    Severity       = 'HIGH'
+                    Score          = 7
+                    Description    = "Last patch installed $daysSince days ago ($($lastPatch.InstalledOn.ToString('yyyy-MM-dd'))). Monthly patching recommended."
+                    Recommendation = 'Run Windows Update and establish a monthly patch cycle aligned with Microsoft Patch Tuesday.'
+                    cis_control    = 7
+                })
+            } elseif ($daysSince -gt 14) {
+                $findings.Add([PSCustomObject]@{
+                    FindingType    = 'LastPatchAge'
+                    Resource       = 'System'
+                    Severity       = 'MEDIUM'
+                    Score          = 4
+                    Description    = "Last patch installed $daysSince days ago ($($lastPatch.InstalledOn.ToString('yyyy-MM-dd')))."
+                    Recommendation = 'Check for new updates. Consider enabling automatic updates to maintain timely patch coverage.'
+                    cis_control    = 7
+                })
+            }
+        }
+    } catch {
+        Write-Warning "Could not check hotfix history: $_"
+    }
+
+    # ------------------------------------------------------------------
+    # PATCH-02: Uptime / last reboot
+    # ------------------------------------------------------------------
+    try {
+        $os        = Get-CimInstance -ClassName Win32_OperatingSystem
+        $lastBoot  = $os.LastBootUpTime
+        $uptime    = [int]($now - $lastBoot).TotalDays
+        $summary.last_reboot  = $lastBoot.ToString('yyyy-MM-dd')
+        $summary.uptime_days  = $uptime
+
+        if ($uptime -gt 60) {
+            $findings.Add([PSCustomObject]@{
+                FindingType    = 'UptimeExceeded'
+                Resource       = 'System'
+                Severity       = 'HIGH'
+                Score          = 7
+                Description    = "System has been running for $uptime days without a reboot (last reboot: $($lastBoot.ToString('yyyy-MM-dd'))). Patches requiring a reboot have not been fully applied."
+                Recommendation = 'Schedule a reboot in the next maintenance window. Ensure systems are rebooted at least monthly after Patch Tuesday.'
+                cis_control    = 7
+            })
+        } elseif ($uptime -gt 30) {
+            $findings.Add([PSCustomObject]@{
+                FindingType    = 'UptimeExceeded'
+                Resource       = 'System'
+                Severity       = 'MEDIUM'
+                Score          = 4
+                Description    = "System has been running for $uptime days without a reboot (last reboot: $($lastBoot.ToString('yyyy-MM-dd')))."
+                Recommendation = 'Schedule a maintenance window reboot to apply any pending updates.'
+                cis_control    = 7
+            })
+        }
+    } catch {
+        Write-Warning "Could not check system uptime: $_"
+    }
 
     # Compute overall risk
     if (@($findings | Where-Object { $_.Severity -eq 'CRITICAL' }).Count -gt 0) { $summary.overall_risk = 'CRITICAL' }
