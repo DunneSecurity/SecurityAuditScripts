@@ -126,6 +126,103 @@ Describe 'Get-WinPatchFindings' {
         $finding = $result.findings | Where-Object FindingType -eq 'UptimeExceeded'
         $finding | Should -BeNullOrEmpty
     }
+
+    # ── PATCH-03: Pending reboot ──────────────────────────────────────────────
+
+    It '9. PATCH-03 flags HIGH when RebootRequired registry key exists' {
+        Mock Get-HotFix {
+            @([PSCustomObject]@{ InstalledOn = (Get-Date).AddDays(-5); HotFixID = 'KB999999' })
+        }
+        Mock Get-CimInstance { [PSCustomObject]@{ LastBootUpTime = (Get-Date).AddDays(-5) } }
+        Mock Get-Service { [PSCustomObject]@{ Status = 'Running'; StartType = 'Automatic' } }
+        Mock Get-ItemProperty {
+            param($Path, $Name, $ErrorAction)
+            # Return a non-null object for the RebootRequired WU key path
+            if ($Path -like '*WindowsUpdate*Auto Update*RebootRequired*') {
+                return [PSCustomObject]@{}
+            }
+            return $null
+        }
+
+        $result  = Get-WinPatchFindings -MaxSearchSeconds 0
+        $finding = $result.findings | Where-Object FindingType -eq 'PendingRebootRequired'
+        $finding | Should -Not -BeNullOrEmpty
+        $finding.Severity | Should -Be 'HIGH'
+        $finding.Score    | Should -Be 7
+        $result.summary.pending_reboot | Should -Be $true
+    }
+
+    It '10. PATCH-03 produces no finding when no reboot-pending keys present' {
+        Mock Get-HotFix {
+            @([PSCustomObject]@{ InstalledOn = (Get-Date).AddDays(-5); HotFixID = 'KB888888' })
+        }
+        Mock Get-CimInstance { [PSCustomObject]@{ LastBootUpTime = (Get-Date).AddDays(-5) } }
+        Mock Get-Service { [PSCustomObject]@{ Status = 'Running'; StartType = 'Automatic' } }
+        Mock Get-ItemProperty { $null }
+
+        $result  = Get-WinPatchFindings -MaxSearchSeconds 0
+        $finding = $result.findings | Where-Object FindingType -eq 'PendingRebootRequired'
+        $finding | Should -BeNullOrEmpty
+        $result.summary.pending_reboot | Should -Be $false
+    }
+
+    # ── PATCH-04: WU service disabled ─────────────────────────────────────────
+
+    It '11. PATCH-04 flags HIGH when wuauserv is disabled' {
+        Mock Get-HotFix {
+            @([PSCustomObject]@{ InstalledOn = (Get-Date).AddDays(-5); HotFixID = 'KB777000' })
+        }
+        Mock Get-CimInstance { [PSCustomObject]@{ LastBootUpTime = (Get-Date).AddDays(-5) } }
+        Mock Get-Service {
+            [PSCustomObject]@{ Name = 'wuauserv'; Status = 'Stopped'; StartType = 'Disabled' }
+        }
+        Mock Get-ItemProperty { $null }
+
+        $result  = Get-WinPatchFindings -MaxSearchSeconds 0
+        $finding = $result.findings | Where-Object FindingType -eq 'WindowsUpdateServiceDisabled'
+        $finding | Should -Not -BeNullOrEmpty
+        $finding.Severity | Should -Be 'HIGH'
+        $finding.Score    | Should -Be 8
+    }
+
+    It '12. PATCH-04 produces no finding when wuauserv is running' {
+        Mock Get-HotFix {
+            @([PSCustomObject]@{ InstalledOn = (Get-Date).AddDays(-5); HotFixID = 'KB666000' })
+        }
+        Mock Get-CimInstance { [PSCustomObject]@{ LastBootUpTime = (Get-Date).AddDays(-5) } }
+        Mock Get-Service {
+            [PSCustomObject]@{ Name = 'wuauserv'; Status = 'Running'; StartType = 'Automatic' }
+        }
+        Mock Get-ItemProperty { $null }
+
+        $result  = Get-WinPatchFindings -MaxSearchSeconds 0
+        $finding = $result.findings | Where-Object FindingType -eq 'WindowsUpdateServiceDisabled'
+        $finding | Should -BeNullOrEmpty
+    }
+
+    # ── PATCH-05: Auto-update disabled ────────────────────────────────────────
+
+    It '13. PATCH-05 flags MEDIUM when AUOptions = 1 (disabled)' {
+        Mock Get-HotFix {
+            @([PSCustomObject]@{ InstalledOn = (Get-Date).AddDays(-5); HotFixID = 'KB555000' })
+        }
+        Mock Get-CimInstance { [PSCustomObject]@{ LastBootUpTime = (Get-Date).AddDays(-5) } }
+        Mock Get-Service { [PSCustomObject]@{ Status = 'Running'; StartType = 'Automatic' } }
+        Mock Get-ItemProperty {
+            param($Path, $Name, $ErrorAction)
+            if ($Path -like '*WindowsUpdate*AU*' -and $Name -eq 'AUOptions') {
+                return [PSCustomObject]@{ AUOptions = 1 }
+            }
+            return $null
+        }
+
+        $result  = Get-WinPatchFindings -MaxSearchSeconds 0
+        $finding = $result.findings | Where-Object FindingType -eq 'AutoUpdateDisabled'
+        $finding | Should -Not -BeNullOrEmpty
+        $finding.Severity | Should -Be 'MEDIUM'
+        $finding.Score    | Should -Be 5
+        $result.summary.auto_update_enabled | Should -Be $false
+    }
 }
 
 Describe 'Get-SeverityLabel' {

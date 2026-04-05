@@ -192,6 +192,118 @@ function Get-WinPatchFindings {
         Write-Warning "Could not check system uptime: $_"
     }
 
+    # ------------------------------------------------------------------
+    # PATCH-03: Pending reboot required
+    # ------------------------------------------------------------------
+    try {
+        $rebootRequired = $false
+
+        $wuReboot = Get-ItemProperty `
+            -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired' `
+            -ErrorAction SilentlyContinue
+        if ($null -ne $wuReboot) { $rebootRequired = $true }
+
+        $pfroKey = Get-ItemProperty `
+            -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' `
+            -Name 'PendingFileRenameOperations' `
+            -ErrorAction SilentlyContinue
+        if ($null -ne $pfroKey -and $null -ne $pfroKey.PendingFileRenameOperations) { $rebootRequired = $true }
+
+        $sdReboot = Get-ItemProperty `
+            -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SoftwareDistribution\RebootRequired' `
+            -ErrorAction SilentlyContinue
+        if ($null -ne $sdReboot) { $rebootRequired = $true }
+
+        $summary.pending_reboot = $rebootRequired
+
+        if ($rebootRequired) {
+            $findings.Add([PSCustomObject]@{
+                FindingType    = 'PendingRebootRequired'
+                Resource       = 'System'
+                Severity       = 'HIGH'
+                Score          = 7
+                Description    = 'A system reboot is required to complete the installation of one or more updates. The system is not fully patched until rebooted.'
+                Recommendation = 'Schedule a reboot during the next available maintenance window to complete pending update installation.'
+                cis_control    = 7
+            })
+        }
+    } catch {
+        Write-Warning "Could not check pending reboot status: $_"
+    }
+
+    # ------------------------------------------------------------------
+    # PATCH-04: Windows Update service disabled
+    # ------------------------------------------------------------------
+    try {
+        $wuSvc = Get-Service -Name 'wuauserv' -ErrorAction SilentlyContinue
+        $summary.windows_update_service = if ($null -ne $wuSvc) { $wuSvc.Status.ToString() } else { 'Unknown' }
+
+        if ($null -ne $wuSvc -and $wuSvc.StartType -eq 'Disabled') {
+            $findings.Add([PSCustomObject]@{
+                FindingType    = 'WindowsUpdateServiceDisabled'
+                Resource       = 'wuauserv'
+                Severity       = 'HIGH'
+                Score          = 8
+                Description    = 'The Windows Update service (wuauserv) is disabled. This machine cannot receive security updates automatically.'
+                Recommendation = "Enable the Windows Update service: Set-Service -Name 'wuauserv' -StartupType Automatic; Start-Service 'wuauserv'"
+                cis_control    = 7
+            })
+        }
+    } catch {
+        Write-Warning "Could not check Windows Update service: $_"
+    }
+
+    # ------------------------------------------------------------------
+    # PATCH-05: Auto-update disabled via policy
+    # ------------------------------------------------------------------
+    try {
+        $auPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU'
+        $auKey  = Get-ItemProperty -Path $auPath -Name 'AUOptions' -ErrorAction SilentlyContinue
+        $auOptions = if ($null -ne $auKey) { $auKey.AUOptions } else { $null }
+        $summary.auto_update_enabled = ($null -eq $auOptions -or $auOptions -notin @(1, 2))
+
+        if ($auOptions -eq 1 -or $auOptions -eq 2) {
+            $optionText = if ($auOptions -eq 1) { 'disabled (AUOptions=1)' } else { 'notify-only, no auto-download (AUOptions=2)' }
+            $findings.Add([PSCustomObject]@{
+                FindingType    = 'AutoUpdateDisabled'
+                Resource       = 'Windows Update Policy'
+                Severity       = 'MEDIUM'
+                Score          = 5
+                Description    = "Automatic updates are $optionText. Updates are not being downloaded or installed automatically."
+                Recommendation = 'Set AUOptions to 4 (auto-download and schedule install) via Group Policy: Computer Configuration → Administrative Templates → Windows Components → Windows Update → Configure Automatic Updates.'
+                cis_control    = 7
+            })
+        }
+    } catch {
+        Write-Warning "Could not check auto-update policy: $_"
+    }
+
+    # ------------------------------------------------------------------
+    # PATCH-06: WSUS server configured (informational)
+    # ------------------------------------------------------------------
+    try {
+        $wuPath     = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate'
+        $wuKey      = Get-ItemProperty -Path $wuPath -Name 'WUServer' -ErrorAction SilentlyContinue
+        $wsusServer = if ($null -ne $wuKey -and $null -ne $wuKey.WUServer -and $wuKey.WUServer -ne '') {
+            $wuKey.WUServer
+        } else { $null }
+        $summary.wsus_server = $wsusServer
+
+        if ($null -ne $wsusServer) {
+            $findings.Add([PSCustomObject]@{
+                FindingType    = 'WsusConfigured'
+                Resource       = $wsusServer
+                Severity       = 'LOW'
+                Score          = 0
+                Description    = "Updates are sourced from WSUS server: $wsusServer. Verify this server is actively maintained and approving security updates promptly."
+                Recommendation = 'Ensure WSUS approves critical and security updates within 30 days of release. Confirm all machines can reach the WSUS server.'
+                cis_control    = 7
+            })
+        }
+    } catch {
+        Write-Warning "Could not check WSUS configuration: $_"
+    }
+
     # Compute overall risk
     if (@($findings | Where-Object { $_.Severity -eq 'CRITICAL' }).Count -gt 0) { $summary.overall_risk = 'CRITICAL' }
     elseif (@($findings | Where-Object { $_.Severity -eq 'HIGH' }).Count -gt 0)     { $summary.overall_risk = 'HIGH' }
