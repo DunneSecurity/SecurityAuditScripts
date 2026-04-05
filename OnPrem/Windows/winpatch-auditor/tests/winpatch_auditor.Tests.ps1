@@ -79,6 +79,7 @@ Describe 'Get-WinPatchFindings' {
         $finding = $result.findings | Where-Object FindingType -eq 'LastPatchAge'
         $finding | Should -Not -BeNullOrEmpty
         $finding.Severity | Should -Be 'CRITICAL'
+        $finding.Score    | Should -Be 9
     }
 
     # ── PATCH-02: Uptime ──────────────────────────────────────────────────────
