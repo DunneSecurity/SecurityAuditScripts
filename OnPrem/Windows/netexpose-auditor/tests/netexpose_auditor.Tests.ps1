@@ -1,4 +1,17 @@
 # OnPrem/Windows/netexpose-auditor/tests/netexpose_auditor.Tests.ps1
+
+# BeforeDiscovery runs during Pester's discovery phase, before BeforeAll.
+# We dot-source the script here so $script:DEFAULT_PORTS is available for -TestCases
+# expansion.  The stub for Test-NetConnection is defined first to prevent any
+# real network calls when the script's Main section runs during dot-source.
+BeforeDiscovery {
+    function Test-NetConnection {
+        param($ComputerName, $Port, $InformationLevel, $WarningAction)
+        [PSCustomObject]@{ TcpTestSucceeded = $false }
+    }
+    . "$PSScriptRoot/../netexpose_auditor.ps1" -Target '10.0.0.1'
+}
+
 BeforeAll {
     function Test-NetConnection {
         param($ComputerName, $Port, $InformationLevel, $WarningAction)
@@ -108,6 +121,24 @@ Describe 'Invoke-HostScan' {
         # No Mock needed — Test-NetConnection should not be called at all
         $findings = Invoke-HostScan -Ip '10.0.0.1' -AllPorts @()
         $findings | Should -BeNullOrEmpty
+    }
+
+    It 'produces a correctly structured finding for each default port when open (<Service>)' -TestCases (
+        $script:DEFAULT_PORTS | ForEach-Object { @{ Port = $_.Port; Service = $_.Service; Severity = $_.Severity; FindingId = $_.FindingId } }
+    ) {
+        param($Port, $Service, $Severity, $FindingId)
+        $script:_testPort = $Port
+        Mock Test-NetConnection {
+            param($ComputerName, $Port)
+            [PSCustomObject]@{ TcpTestSucceeded = ($Port -eq $script:_testPort) }
+        }
+        $findings = Invoke-HostScan -Ip '10.0.0.1' -AllPorts $script:DEFAULT_PORTS
+        $f = $findings | Where-Object { $_.Port -eq $Port }
+        $f                | Should -Not -BeNullOrEmpty
+        $f.FindingType    | Should -Be 'ExposedService'
+        $f.Service        | Should -Be $Service
+        $f.Severity       | Should -Be $Severity
+        $f.Recommendation | Should -Not -BeNullOrEmpty
     }
 }
 

@@ -140,7 +140,7 @@ function Expand-CidrRange {
             [Array]::Reverse($bytes)
             $hosts.Add(([System.Net.IPAddress]::new($bytes)).ToString())
         }
-        return @($hosts)
+        return , [string[]]@($hosts)
     }
 
     throw "Invalid target '$Target'. Use an IP address or CIDR notation (e.g. 192.168.1.0/24)."
