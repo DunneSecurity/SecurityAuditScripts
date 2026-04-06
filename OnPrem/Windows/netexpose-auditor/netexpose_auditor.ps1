@@ -158,6 +158,8 @@ function Invoke-HostScan {
 
     $findings = [System.Collections.Generic.List[PSCustomObject]]::new()
     foreach ($portDef in $AllPorts) {
+        # Note: Test-NetConnection does not support a configurable timeout.
+        # $TimeoutMs is reserved for a future TcpClient-based probe implementation.
         $conn = Test-NetConnection -ComputerName $Ip -Port $portDef.Port `
                     -InformationLevel Quiet -WarningAction SilentlyContinue
         if ($conn.TcpTestSucceeded) {
@@ -197,7 +199,7 @@ function Get-NetworkExposureFindings {
             Port           = $port
             Service        = "Port $port"
             FindingId      = 'NE-XX'
-            Severity       = 'MEDIUM'
+            Severity       = Get-SeverityLabel -Score 4
             Score          = 4
             CisControl     = 'CIS 12.2'
             Recommendation = "Investigate whether port $port should be exposed. Restrict access if not required."
