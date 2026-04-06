@@ -129,7 +129,11 @@ $AzureAuditors = @(
 )
 
 $M365Auditors = @(
-    @{ Name = 'm365';         Script = 'M365\m365-auditor\m365_auditor.ps1';                  Prefix = 'm365_report';         AllSubs = $false }
+    @{ Name = 'm365';        Script = 'M365\m365-auditor\m365_auditor.ps1';              Prefix = 'm365_report';        AllSubs = $false }
+    @{ Name = 'sharepoint';  Script = 'M365\sharepoint-auditor\sharepoint_auditor.ps1';  Prefix = 'sharepoint_report';  AllSubs = $false }
+    @{ Name = 'teams';       Script = 'M365\teams-auditor\teams_auditor.ps1';            Prefix = 'teams_report';        AllSubs = $false }
+    @{ Name = 'intune';      Script = 'M365\intune-auditor\intune_auditor.ps1';          Prefix = 'intune_report';       AllSubs = $false }
+    @{ Name = 'exchange';    Script = 'M365\exchange-auditor\exchange_auditor.ps1';      Prefix = 'exchange_report';     AllSubs = $false }
 )
 
 $WindowsAuditors = @(

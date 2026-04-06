@@ -42,8 +42,8 @@ graph TD
         AZ["Entra · Storage · Activity Log · NSG\nSubscription · Key Vault · Defender\nPolicy · Backup"]
     end
 
-    subgraph M365["📨 M365  —  1 auditor  (PowerShell · Graph · ExO)"]
-        M["CA MFA · Legacy Auth · Mailbox Forwarding · OAuth Consent\nMFA Coverage · Admin Roles · Guest Access"]
+    subgraph M365["📨 M365  —  5 auditors  (PowerShell · Graph · ExO · SPO · Teams)"]
+        M["CA MFA · Legacy Auth · Mailbox Forwarding · OAuth Consent · MFA Coverage · Admin Roles\nSharePoint Sharing · Teams Federation · Intune Compliance · Exchange Transport Rules"]
     end
 
     subgraph Windows["🪟 Windows  —  8 auditors  (PowerShell)"]
@@ -127,7 +127,7 @@ The PowerShell equivalent of `audit.py`. Runs all Azure, M365, and Windows on-pr
 .\Run-Audit.ps1 -Client "Acme Corp" -M365 -SkipSummary
 ```
 
-**Flags:** `-Azure` (9 auditors) · `-M365` · `-Windows` (LAPS) · `-All` · `-AllSubscriptions` · `-OutputDir` · `-SkipSummary` · `-Open`
+**Flags:** `-Azure` (9 auditors) · `-M365` (5 auditors) · `-Windows` (LAPS) · `-All` · `-AllSubscriptions` · `-OutputDir` · `-SkipSummary` · `-Open`
 
 > **Prerequisites:** PowerShell 7+ · Az module · `Connect-AzAccount` already run · Python 3 for exec summary (optional)
 
@@ -175,7 +175,11 @@ SecurityAuditScripts/
 │   ├── policy-auditor/                 # Azure Policy assignments, compliance state, exemptions
 │   └── backup-auditor/                 # Azure Backup vault coverage, retention, redundancy
 ├── M365/
-│   └── m365-auditor/                   # CA MFA, legacy auth, mailbox forwarding, OAuth consent
+│   ├── m365-auditor/                   # CA MFA, legacy auth, mailbox forwarding, OAuth consent
+│   ├── sharepoint-auditor/             # SharePoint/OneDrive external sharing (SP-01–SP-06)
+│   ├── teams-auditor/                  # Teams federation, guest access, meeting policies (TM-01–TM-06)
+│   ├── intune-auditor/                 # Intune device compliance and CA enforcement (IN-01–IN-05)
+│   └── exchange-auditor/               # Transport rules, delegation, audit logging (EX-01–EX-08)
 ├── Email/
 │   ├── README.md
 │   └── email-security-auditor/         # SPF, DKIM, DMARC DNS checks
@@ -245,6 +249,10 @@ SecurityAuditScripts/
 | Script | Description | Output |
 |--------|-------------|--------|
 | [M365 Auditor](./M365/m365-auditor/) | Audits Microsoft 365 tenant security controls — Conditional Access MFA enforcement, legacy authentication blocking, Exchange Online mailbox auto-forwarding and inbox forwarding rules, OAuth app user consent policy, per-user MFA registration coverage, privileged admin role enumeration, and guest/external user review. Requires Microsoft.Graph and ExchangeOnlineManagement modules. | JSON, CSV, HTML |
+| [SharePoint Auditor](./M365/sharepoint-auditor/) | Audits SharePoint Online and OneDrive external sharing — anonymous link policies, OneDrive sharing settings, sites more permissive than tenant default, default link type, and domain restrictions. Requires SharePoint Online Management Shell. | JSON, CSV, HTML |
+| [Teams Auditor](./M365/teams-auditor/) | Audits Microsoft Teams security posture — external federation, guest access and channel permissions, meeting lobby bypass, recording expiry, and app installation policies. Requires MicrosoftTeams module. | JSON, CSV, HTML |
+| [Intune Auditor](./M365/intune-auditor/) | Audits Intune device compliance — missing platform policies, grace period, CA device enforcement, non-compliant device access, and Windows auto-enrollment. Requires Microsoft.Graph module. | JSON, CSV, HTML |
+| [Exchange Auditor](./M365/exchange-auditor/) | Audits Exchange Online transport rules, remote domain auto-forwarding, mailbox FullAccess delegation, shared mailbox sign-in, per-mailbox and admin audit logging, and SMTP AUTH. Requires ExchangeOnlineManagement and Microsoft.Graph modules. | JSON, CSV, HTML |
 
 ### On-Premises — Windows
 
