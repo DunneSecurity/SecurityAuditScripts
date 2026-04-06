@@ -5,6 +5,7 @@ BeforeAll {
         [PSCustomObject]@{ TcpTestSucceeded = $false }
     }
 
+    # -Target is mandatory in the script; pass a single IP to prevent scan execution on load
     . "$PSScriptRoot/../netexpose_auditor.ps1" -Target '10.0.0.1'
 }
 
@@ -64,8 +65,11 @@ Describe 'Invoke-HostScan' {
         }
         $findings = Invoke-HostScan -Ip '10.0.0.1' -AllPorts $script:DEFAULT_PORTS
         $f = $findings | Where-Object { $_.Port -eq 445 }
-        $f.Service  | Should -Be 'SMB'
-        $f.Severity | Should -Be 'CRITICAL'
+        $f              | Should -Not -BeNullOrEmpty
+        $f.FindingType  | Should -Be 'ExposedService'
+        $f.Service      | Should -Be 'SMB'
+        $f.Severity     | Should -Be 'CRITICAL'
+        $f.Port         | Should -Be 445
     }
 
     It 'emits no finding when port is closed' {
@@ -100,9 +104,9 @@ Describe 'Invoke-HostScan' {
         $f.Severity     | Should -Be 'MEDIUM'
     }
 
-    It 'returns empty array when all ports closed' {
-        Mock Test-NetConnection { [PSCustomObject]@{ TcpTestSucceeded = $false } }
-        $findings = Invoke-HostScan -Ip '10.0.0.1' -AllPorts $script:DEFAULT_PORTS
+    It 'returns empty array when AllPorts list is empty' {
+        # No Mock needed — Test-NetConnection should not be called at all
+        $findings = Invoke-HostScan -Ip '10.0.0.1' -AllPorts @()
         $findings | Should -BeNullOrEmpty
     }
 }
