@@ -205,3 +205,34 @@ Describe 'Get-CustomBannedPasswordFindings' {
         $findings | Should -BeNullOrEmpty
     }
 }
+
+# ---------------------------------------------------------------------------
+# ConvertTo-EntrapwdJsonReport
+# ---------------------------------------------------------------------------
+Describe 'ConvertTo-EntrapwdJsonReport' {
+    It 'emits generated_at, tenant_id, summary, and findings fields' {
+        $f = [PSCustomObject]@{
+            FindingType = 'SsprDisabled'; Domain = 'tenant'
+            Detail = 'SSPR disabled'; Severity = 'HIGH'
+            CisControl = 'CIS 5.2'; Score = 6; Recommendation = 'Enable SSPR'
+        }
+        $report = ConvertTo-EntrapwdJsonReport -Findings @($f) -TenantId 'test-tenant-id'
+        $report.generated_at | Should -Not -BeNullOrEmpty
+        $report.tenant_id    | Should -Be 'test-tenant-id'
+        $report.summary      | Should -Not -BeNullOrEmpty
+        $report.findings     | Should -HaveCount 1
+    }
+
+    It 'summary counts match findings array' {
+        $findings = @(
+            [PSCustomObject]@{ FindingType='SecurityDefaultsDisabled'; Domain='tenant'; Detail='x'; Severity='HIGH';   CisControl='CIS 5.2'; Score=7; Recommendation='x' }
+            [PSCustomObject]@{ FindingType='SsprDisabled';             Domain='tenant'; Detail='x'; Severity='HIGH';   CisControl='CIS 5.2'; Score=6; Recommendation='x' }
+            [PSCustomObject]@{ FindingType='PasswordExpiryEnabled';    Domain='a.com';  Detail='x'; Severity='MEDIUM'; CisControl='CIS 5.2'; Score=4; Recommendation='x' }
+        )
+        $report = ConvertTo-EntrapwdJsonReport -Findings $findings -TenantId 'x'
+        $report.summary.CRITICAL | Should -Be 0
+        $report.summary.HIGH     | Should -Be 2
+        $report.summary.MEDIUM   | Should -Be 1
+        $report.summary.LOW      | Should -Be 0
+    }
+}

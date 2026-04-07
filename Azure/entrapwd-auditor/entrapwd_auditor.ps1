@@ -228,9 +228,179 @@ function Get-CustomBannedPasswordFindings {
 }
 
 # ---------------------------------------------------------------------------
+# Output helpers
+# ---------------------------------------------------------------------------
+function ConvertTo-EntrapwdJsonReport {
+    param(
+        [Parameter(Mandatory)][array]$Findings,
+        [string]$TenantId = ''
+    )
+    $summary = @{ CRITICAL = 0; HIGH = 0; MEDIUM = 0; LOW = 0 }
+    foreach ($f in $Findings) { if ($summary.ContainsKey($f.Severity)) { $summary[$f.Severity]++ } }
+    return [PSCustomObject]@{
+        generated_at = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC')
+        tenant_id    = $TenantId
+        summary      = $summary
+        findings     = $Findings
+    }
+}
+
+function ConvertTo-EntrapwdCsvReport {
+    param([Parameter(Mandatory)][array]$Findings)
+    $Findings | Select-Object `
+        @{N='Domain';       E={$_.Domain}},
+        @{N='FindingType';  E={$_.FindingType}},
+        @{N='Detail';       E={$_.Detail}},
+        Severity, Score, CisControl, Recommendation |
+        ConvertTo-Csv -NoTypeInformation
+}
+
+function ConvertTo-EntrapwdHtmlReport {
+    param(
+        [Parameter(Mandatory)][array]$Findings,
+        [string]$TenantId  = '',
+        [string]$ScannedAt = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC')
+    )
+    $counts = @{ CRITICAL = 0; HIGH = 0; MEDIUM = 0; LOW = 0 }
+    foreach ($f in $Findings) { if ($counts.ContainsKey($f.Severity)) { $counts[$f.Severity]++ } }
+
+    $rows = foreach ($f in $Findings) {
+        $colour = Get-SeverityColour $f.Severity
+        "<tr>
+            <td>$([System.Web.HttpUtility]::HtmlEncode($f.FindingType))</td>
+            <td>$([System.Web.HttpUtility]::HtmlEncode($f.Domain))</td>
+            <td>$([System.Web.HttpUtility]::HtmlEncode($f.Detail))</td>
+            <td><span style='background:$colour;color:#fff;padding:2px 6px;border-radius:3px;font-weight:bold'>$($f.Severity)</span></td>
+            <td><div class='rem-text'>&#8627; $([System.Web.HttpUtility]::HtmlEncode($f.Recommendation))</div></td>
+        </tr>"
+    }
+
+    return @"
+<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>
+<title>Entra Password Policy Audit Report</title>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;background:#f5f6fa;color:#333}
+  .header{background:#1a1a2e;color:#fff;padding:30px 40px}
+  .header h1{margin:0;font-size:1.8em}
+  .header p{margin:5px 0 0;opacity:0.8}
+  .content{padding:24px 32px}
+  .summary{display:flex;gap:16px;margin-bottom:24px}
+  .card{background:#fff;border-radius:8px;padding:16px 24px;box-shadow:0 2px 8px rgba(0,0,0,0.08);min-width:120px;text-align:center}
+  .card .num{font-size:2em;font-weight:bold}.card .lbl{color:#666;font-size:.85em}
+  table{width:100%;border-collapse:collapse;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.08)}
+  th{background:#1a1a2e;color:#fff;padding:10px;text-align:left}
+  td{padding:8px 10px;border-bottom:1px solid #dee2e6}tr:hover{background:#f1f3f5}
+  .rem-text{display:block;font-size:0.78em;color:#555;padding-left:12px;font-style:italic;margin-top:4px}
+</style></head><body>
+<div class='header'>
+<h1>Entra Password Policy Audit Report</h1>
+<p>Tenant: $TenantId &nbsp;|&nbsp; Generated: $ScannedAt</p>
+</div>
+<div class='content'>
+<div class='summary'>
+  <div class='card'><div class='num'>$($Findings.Count)</div><div class='lbl'>Total Findings</div></div>
+  <div class='card'><div class='num' style='color:#dc3545'>$($counts.CRITICAL)</div><div class='lbl'>CRITICAL</div></div>
+  <div class='card'><div class='num' style='color:#fd7e14'>$($counts.HIGH)</div><div class='lbl'>HIGH</div></div>
+  <div class='card'><div class='num' style='color:#ffc107'>$($counts.MEDIUM)</div><div class='lbl'>MEDIUM</div></div>
+  <div class='card'><div class='num' style='color:#28a745'>$($counts.LOW)</div><div class='lbl'>LOW</div></div>
+</div>
+<table><thead><tr>
+  <th>Finding</th><th>Domain</th><th>Detail</th><th>Severity</th><th>Recommendation</th>
+</tr></thead><tbody>
+$($rows -join "`n")
+</tbody></table>
+</div></body></html>
+"@
+}
+
+function Write-TerminalSummary {
+    param([array]$Findings, [string]$TenantId)
+    $counts = @{ CRITICAL = 0; HIGH = 0; MEDIUM = 0; LOW = 0 }
+    foreach ($f in $Findings) { if ($counts.ContainsKey($f.Severity)) { $counts[$f.Severity]++ } }
+    Write-Host ''
+    Write-Host '╔══════════════════════════════════════════════════╗' -ForegroundColor Cyan
+    Write-Host '║     ENTRA PASSWORD POLICY AUDIT COMPLETE         ║' -ForegroundColor Cyan
+    Write-Host '╠══════════════════════════════════════════════════╣' -ForegroundColor Cyan
+    Write-Host "║  Tenant  : $($TenantId.PadRight(38))║" -ForegroundColor Cyan
+    Write-Host "║  Total findings: $($Findings.Count.ToString().PadRight(31))║" -ForegroundColor Cyan
+    Write-Host "║  CRITICAL: $($counts.CRITICAL)  HIGH: $($counts.HIGH)  MEDIUM: $($counts.MEDIUM)  LOW: $($counts.LOW)$((' ' * 20))║" -ForegroundColor Cyan
+    Write-Host '╚══════════════════════════════════════════════════╝' -ForegroundColor Cyan
+    Write-Host ''
+}
+
+# ---------------------------------------------------------------------------
 # Main — skipped when dot-sourced (Pester dot-sources with '.')
 # ---------------------------------------------------------------------------
 if ($MyInvocation.InvocationName -ne '.') {
-    Write-Host 'entrapwd_auditor.ps1 — stub, audit functions not yet implemented'
-    exit 0
+    $requiredModules = @(
+        'Microsoft.Graph.Authentication',
+        'Microsoft.Graph.Identity.SignIns',
+        'Microsoft.Graph.Identity.DirectoryManagement',
+        'Microsoft.Graph.Beta.Identity.DirectoryManagement'
+    )
+    foreach ($mod in $requiredModules) {
+        if (-not (Get-Module -ListAvailable -Name $mod)) {
+            Write-Error "Required module '$mod' is not installed. Run: Install-Module $mod"
+            exit 1
+        }
+    }
+
+    try { $null = Get-MgContext -ErrorAction Stop } catch {
+        Connect-MgGraph -Scopes @(
+            'Policy.Read.All',
+            'Directory.Read.All'
+        ) -NoWelcome
+    }
+
+    $tenantId    = (Get-MgContext).TenantId ?? 'unknown'
+    $timestamp   = Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC'
+    $allFindings = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+    Write-Host "Scanning tenant: $tenantId" -ForegroundColor Gray
+
+    foreach ($fn in @(
+        { Get-PasswordExpiryFindings },
+        { Get-SsprFindings },
+        { Get-SmartLockoutFindings },
+        { Get-SecurityDefaultsFindings },
+        { Get-CustomBannedPasswordFindings }
+    )) {
+        $result = & $fn
+        if ($result) { $allFindings.AddRange([PSCustomObject[]]@($result)) }
+    }
+
+    $reportData = ConvertTo-EntrapwdJsonReport -Findings $allFindings -TenantId $tenantId
+
+    switch ($Format) {
+        'json'   {
+            $reportData | ConvertTo-Json -Depth 10 | Out-File "$Output.json" -Encoding UTF8
+            Set-RestrictedPermissions "$Output.json"
+            Write-Host "JSON report: $Output.json"
+        }
+        'csv'    {
+            ConvertTo-EntrapwdCsvReport $allFindings | Out-File "$Output.csv" -Encoding UTF8
+            Set-RestrictedPermissions "$Output.csv"
+            Write-Host "CSV report: $Output.csv"
+        }
+        'html'   {
+            ConvertTo-EntrapwdHtmlReport -Findings $allFindings -TenantId $tenantId -ScannedAt $timestamp |
+                Out-File "$Output.html" -Encoding UTF8
+            Set-RestrictedPermissions "$Output.html"
+            Write-Host "HTML report: $Output.html"
+        }
+        'all'    {
+            $reportData | ConvertTo-Json -Depth 10 | Out-File "$Output.json" -Encoding UTF8
+            Set-RestrictedPermissions "$Output.json"
+            ConvertTo-EntrapwdCsvReport $allFindings | Out-File "$Output.csv" -Encoding UTF8
+            Set-RestrictedPermissions "$Output.csv"
+            ConvertTo-EntrapwdHtmlReport -Findings $allFindings -TenantId $tenantId -ScannedAt $timestamp |
+                Out-File "$Output.html" -Encoding UTF8
+            Set-RestrictedPermissions "$Output.html"
+            Write-Host "Reports: $Output.json  $Output.csv  $Output.html"
+        }
+        'stdout' { $reportData | ConvertTo-Json -Depth 10 }
+        default  { Write-Error "Unknown format '$Format'"; exit 1 }
+    }
+
+    Write-TerminalSummary -Findings $allFindings -TenantId $tenantId
 }
