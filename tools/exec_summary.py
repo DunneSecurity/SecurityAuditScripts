@@ -120,6 +120,42 @@ AZURE_WINDOWS_PATTERNS = [
     "mde_report.json",
 ]
 
+# Sub-group lists for per-group partial-run detection.
+# Azure: all auditors that run via Az/M365 PowerShell modules (cloud credentials).
+AZURE_PATTERNS = [
+    "keyvault_report.json",
+    "storage_report.json",
+    "nsg_report.json",
+    "activitylog_report.json",
+    "subscription_report.json",
+    "entra_report.json",
+    "entrapwd_report.json",
+    "hybrid_report.json",
+    "defender_report.json",
+    "policy_report.json",
+    "azbackup_report.json",
+    # M365 (require cloud credentials; grouped with Azure)
+    "m365_report.json",
+    "sharepoint_report.json",
+    "teams_report.json",
+    "intune_report.json",
+    "exchange_report.json",
+]
+
+# Windows: auditors that run locally on Windows machines (require admin access).
+WINDOWS_PATTERNS = [
+    "ad_report.json",
+    "localuser_report.json",
+    "winfirewall_report.json",
+    "smbsigning_report.json",
+    "auditpolicy_report.json",
+    "bitlocker_report.json",
+    "laps_report.json",
+    "winpatch_report.json",
+    "mde_report.json",
+    "netexpose_report.json",
+]
+
 # Human-readable names for display
 PILLAR_LABELS = {
     "s3": "S3 Buckets",
@@ -348,7 +384,7 @@ def get_quick_wins(all_findings, max_wins=10):
 def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
                generated_at, path, client_name="", assessor="", scope="",
                grade_note="", modules_scanned=None, not_run_pillars=None,
-               baseline_data=None):
+               baseline_data=None, warnings=None):
     """Write executive summary HTML report to path with 0o600 permissions."""
     grade_colour = GRADE_COLOURS.get(grade, "#6c757d")
     is_capped = bool(grade_note)
@@ -470,6 +506,21 @@ def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
     no_quick_wins = ('<tr><td colspan="4" style="text-align:center;color:#888">'
                      'No quick wins identified.</td></tr>') if not quick_wins else ""
 
+    warnings_list = warnings or []
+    if warnings_list:
+        warn_items_html = "".join(
+            f'<div class="warn-item">&#9888; {html_lib.escape(w)}</div>'
+            for w in warnings_list
+        )
+        warnings_html = (
+            '<div class="warn-section">'
+            '<h3>&#9888; Incomplete Coverage — Missing Report Files</h3>'
+            f'{warn_items_html}'
+            '</div>'
+        )
+    else:
+        warnings_html = ""
+
     client_meta_lines = []
     if client_name:
         client_meta_lines.append(f'<p style="color:#ccc;margin:8px 0 0;font-size:0.95em">{html_lib.escape(client_name)}</p>')
@@ -579,6 +630,9 @@ def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
   .flag-item {{ margin-bottom:6px; }}
   .flag-text {{ display:block; font-size:0.85em; }}
   .rem-text {{ display:block; font-size:0.78em; color:#555; padding-left:12px; font-style:italic; }}
+  .warn-section {{ background:#fff8e1; border-left:4px solid #ffc107; margin:0 40px 20px; padding:16px 20px; border-radius:0 8px 8px 0; box-shadow:0 2px 8px rgba(0,0,0,.06); }}
+  .warn-section h3 {{ margin:0 0 10px; color:#856404; font-size:0.95em; }}
+  .warn-item {{ font-size:0.85em; color:#533f03; padding:3px 0; }}
   .crit-callout {{ border-top:3px solid #dc3545; }}
   .crit-callout h2 {{ color:#dc3545; border-color:#dc354533; }}
   .crit-items {{ display:flex; flex-direction:column; gap:12px; }}
@@ -621,6 +675,7 @@ def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
   <p style="color:#aaa;margin:8px 0 0;font-size:0.85em">Generated: {html_lib.escape(generated_at)} &nbsp;|&nbsp; {len(pillar_stats)} pillar{'s' if len(pillar_stats) != 1 else ''} analysed</p>
 </div>
 {scope_section_html}
+{warnings_html}
 <div class="section">
   <h2>Security Posture by Pillar</h2>
   <div class="pillars">{pillar_cards_html}</div>
@@ -702,21 +757,27 @@ function applyFilter(f) {{
 
 
 def warn_missing_azure_windows(input_dir):
-    """Warn about Azure/Windows report files that were not copied back."""
-    found_patterns = {os.path.basename(p) for p in discover_reports(input_dir)}
-    missing = [p for p in AZURE_WINDOWS_PATTERNS if p not in found_patterns]
-    if missing and len(missing) < len(AZURE_WINDOWS_PATTERNS):
-        # Some Azure/Windows files present but others absent — targeted warning
-        log.warning(
-            "The following Azure/Windows report files were not found in %s — "
-            "these pillars will be absent from the executive summary. "
-            "Copy the JSON files from your Windows machine first:\n  %s",
-            input_dir,
-            "\n  ".join(missing),
-        )
-    elif missing and len(missing) == len(AZURE_WINDOWS_PATTERNS):
-        # All absent — likely a pure AWS/Linux run; suppress warning
-        pass
+    """Check for per-group partial-run gaps among Azure and Windows report files.
+
+    Returns a list of warning strings — one per missing pattern when its group
+    was partially run (i.e. at least one file from that group was found).
+    Returns an empty list when a group was not run at all (no false positives)
+    or when all files in a group are present.
+    """
+    found = {os.path.basename(p) for p in discover_reports(input_dir)}
+    warnings = []
+
+    for group, patterns in [("Azure", AZURE_PATTERNS), ("Windows", WINDOWS_PATTERNS)]:
+        found_in_group = [p for p in patterns if p in found]
+        missing_in_group = [p for p in patterns if p not in found]
+        if found_in_group and missing_in_group:
+            for p in missing_in_group:
+                warnings.append(
+                    f"{group} partial run — {p} not found. "
+                    "Copy the JSON file from your Windows machine."
+                )
+
+    return warnings
 
 
 def run(input_dir=".", output_path="exec_summary.html", top_n=5, max_wins=10,
@@ -725,7 +786,9 @@ def run(input_dir=".", output_path="exec_summary.html", top_n=5, max_wins=10,
     report_paths = discover_reports(input_dir)
     if not report_paths:
         log.warning(f"No known report files found in {input_dir}")
-    warn_missing_azure_windows(input_dir)
+    partial_run_warnings = warn_missing_azure_windows(input_dir)
+    for w in partial_run_warnings:
+        log.warning(w)
 
     pillar_stats_list = []
     all_findings_flat = []
@@ -802,6 +865,7 @@ def run(input_dir=".", output_path="exec_summary.html", top_n=5, max_wins=10,
         modules_scanned=modules_scanned,
         not_run_pillars=not_run_pillars,
         baseline_data=baseline_data,
+        warnings=partial_run_warnings,
     )
 
     cap_info = f" [{grade_note}]" if grade_note else ""

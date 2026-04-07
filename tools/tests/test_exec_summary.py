@@ -289,3 +289,110 @@ def test_write_html_empty_findings_still_creates_file(tmp_path):
         path=out,
     )
     assert (tmp_path / "exec_summary.html").exists()
+
+
+# ── warn_missing_azure_windows ─────────────────────────────────────────────────
+
+def test_warn_missing_returns_empty_when_no_azure_windows_present(tmp_path):
+    """Pure AWS/Linux run: no Azure or Windows files → no per-pattern warnings."""
+    (tmp_path / "s3_report.json").write_text('{"findings":[],"summary":{}}')
+    result = es.warn_missing_azure_windows(str(tmp_path))
+    assert result == []
+
+
+def test_warn_missing_returns_empty_when_all_azure_present(tmp_path):
+    """All Azure patterns present → no Azure warnings."""
+    for p in es.AZURE_PATTERNS:
+        (tmp_path / p).write_text('{"findings":[],"summary":{}}')
+    result = es.warn_missing_azure_windows(str(tmp_path))
+    azure_warns = [w for w in result if "azure" in w.lower()]
+    assert azure_warns == []
+
+
+def test_warn_missing_returns_empty_when_all_windows_present(tmp_path):
+    """All Windows patterns present → no Windows warnings."""
+    for p in es.WINDOWS_PATTERNS:
+        (tmp_path / p).write_text('{"findings":[],"summary":{}}')
+    result = es.warn_missing_azure_windows(str(tmp_path))
+    windows_warns = [w for w in result if "windows" in w.lower()]
+    assert windows_warns == []
+
+
+def test_warn_missing_azure_partial_run_warns_per_missing_azure(tmp_path):
+    """Azure partial run: one Azure present, rest missing → one warning per missing Azure."""
+    (tmp_path / "keyvault_report.json").write_text('{"findings":[],"summary":{}}')
+    result = es.warn_missing_azure_windows(str(tmp_path))
+    # Should have warnings for all other Azure patterns (AZURE_PATTERNS minus keyvault)
+    expected_missing = len(es.AZURE_PATTERNS) - 1
+    assert len(result) == expected_missing
+    # Each warning should mention the missing filename
+    for p in es.AZURE_PATTERNS:
+        if p != "keyvault_report.json":
+            assert any(p in w for w in result), f"No warning for missing Azure pattern: {p}"
+
+
+def test_warn_missing_windows_partial_run_warns_per_missing_windows(tmp_path):
+    """Windows partial run: one Windows present, rest missing → one warning per missing Windows."""
+    (tmp_path / "ad_report.json").write_text('{"findings":[],"summary":{}}')
+    result = es.warn_missing_azure_windows(str(tmp_path))
+    expected_missing = len(es.WINDOWS_PATTERNS) - 1
+    assert len(result) == expected_missing
+    for p in es.WINDOWS_PATTERNS:
+        if p != "ad_report.json":
+            assert any(p in w for w in result), f"No warning for missing Windows pattern: {p}"
+
+
+def test_warn_missing_azure_only_run_no_windows_warnings(tmp_path):
+    """Azure ran (all present), Windows didn't → no Windows warnings."""
+    for p in es.AZURE_PATTERNS:
+        (tmp_path / p).write_text('{"findings":[],"summary":{}}')
+    result = es.warn_missing_azure_windows(str(tmp_path))
+    # No Windows warnings when Windows intentionally not run
+    for w in result:
+        for wp in es.WINDOWS_PATTERNS:
+            assert wp not in w, f"Unexpected Windows warning when Windows not run: {w}"
+
+
+def test_warn_missing_windows_only_run_no_azure_warnings(tmp_path):
+    """Windows ran (all present), Azure didn't → no Azure warnings."""
+    for p in es.WINDOWS_PATTERNS:
+        (tmp_path / p).write_text('{"findings":[],"summary":{}}')
+    result = es.warn_missing_azure_windows(str(tmp_path))
+    # No Azure warnings when Azure intentionally not run
+    for w in result:
+        for ap in es.AZURE_PATTERNS:
+            assert ap not in w, f"Unexpected Azure warning when Azure not run: {w}"
+
+
+# ── write_html warnings parameter ──────────────────────────────────────────────
+
+def test_write_html_renders_warning_section_when_warnings_provided(tmp_path):
+    """Warnings list → HTML contains a warning section with the warning text."""
+    out = str(tmp_path / "exec_summary.html")
+    es.write_html(
+        overall_score=80.0, grade="B",
+        pillar_stats=SAMPLE_PILLAR_STATS,
+        top_findings=[],
+        quick_wins=[],
+        generated_at="2026-01-01T00:00:00+00:00",
+        path=out,
+        warnings=["storage_report.json not found — copy from Windows machine"],
+    )
+    content = (tmp_path / "exec_summary.html").read_text()
+    assert "storage_report.json" in content
+
+
+def test_write_html_no_warning_section_when_warnings_empty(tmp_path):
+    """Empty warnings → HTML does not contain warning section div."""
+    out = str(tmp_path / "exec_summary.html")
+    es.write_html(
+        overall_score=80.0, grade="B",
+        pillar_stats=SAMPLE_PILLAR_STATS,
+        top_findings=[],
+        quick_wins=[],
+        generated_at="2026-01-01T00:00:00+00:00",
+        path=out,
+        warnings=[],
+    )
+    content = (tmp_path / "exec_summary.html").read_text()
+    assert '<div class="warn-section">' not in content
