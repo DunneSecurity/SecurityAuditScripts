@@ -38,6 +38,8 @@ Use `Run-Audit.ps1` at the repo root to run all Azure auditors in one command:
 | Script | Azure Service | AWS Equivalent |
 |--------|--------------|----------------|
 | `entra-auditor/entra_auditor.ps1` | Entra ID users, guest access, app credentials, custom roles | iam-privilege-mapper |
+| `entrapwd-auditor/entrapwd_auditor.ps1` | Entra ID password policy — expiry, SSPR, smart lockout, security defaults, banned passwords | — |
+| `hybrid-auditor/hybrid_auditor.ps1` | Hybrid Identity (AAD Connect) — sync staleness, PHS, password writeback, accidental-delete protection, seamless SSO | — |
 | `storage-auditor/storage_auditor.ps1` | Storage Accounts | s3-auditor |
 | `activitylog-auditor/activitylog_auditor.ps1` | Diagnostic Settings / Activity Logs | cloudtrail-auditor |
 | `nsg-auditor/nsg_auditor.ps1` | Network Security Groups | sg-auditor |

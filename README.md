@@ -38,12 +38,12 @@ graph TD
         L["Users · Firewall · Sysctl · Patch · SSH"]
     end
 
-    subgraph Azure["🔷 Azure  —  9 auditors  (PowerShell · Az module)"]
-        AZ["Entra · Storage · Activity Log · NSG\nSubscription · Key Vault · Defender\nPolicy · Backup"]
+    subgraph Azure["🔷 Azure  —  11 auditors  (PowerShell · Az module)"]
+        AZ["Entra · Entra Password Policy · Hybrid Identity\nStorage · Activity Log · NSG · Subscription\nKey Vault · Defender · Policy · Backup"]
     end
 
-    subgraph M365["📨 M365  —  5 auditors  (PowerShell · Graph · ExO · SPO · Teams)"]
-        M["CA MFA · Legacy Auth · Mailbox Forwarding · OAuth Consent · MFA Coverage · Admin Roles\nSharePoint Sharing · Teams Federation · Intune Compliance · Exchange Transport Rules"]
+    subgraph M365["📨 M365  —  6 auditors  (PowerShell · Graph · ExO · SPO · Teams)"]
+        M["CA MFA · Legacy Auth · Mailbox Forwarding · OAuth Consent · MFA Coverage · Admin Roles\nSharePoint Sharing · Teams Federation · Intune Compliance · Exchange Transport Rules\nDefender for Endpoint (MDE onboarding · RTP · encryption · tamper · scan age)"]
     end
 
     subgraph Windows["🪟 Windows  —  8 auditors  (PowerShell)"]
@@ -127,7 +127,7 @@ The PowerShell equivalent of `audit.py`. Runs all Azure, M365, and Windows on-pr
 .\Run-Audit.ps1 -Client "Acme Corp" -M365 -SkipSummary
 ```
 
-**Flags:** `-Azure` (9 auditors) · `-M365` (5 auditors) · `-Windows` (LAPS) · `-All` · `-AllSubscriptions` · `-OutputDir` · `-SkipSummary` · `-Open`
+**Flags:** `-Azure` (11 auditors) · `-M365` (6 auditors) · `-Windows` (LAPS) · `-All` · `-AllSubscriptions` · `-OutputDir` · `-SkipSummary` · `-Open`
 
 > **Prerequisites:** PowerShell 7+ · Az module · `Connect-AzAccount` already run · Python 3 for exec summary (optional)
 
@@ -166,6 +166,8 @@ SecurityAuditScripts/
 ├── Azure/
 │   ├── README.md
 │   ├── entra-auditor/                  # Entra ID MFA, guest roles, app credentials, privesc
+│   ├── entrapwd-auditor/               # Entra ID password policy — expiry, SSPR, smart lockout, security defaults
+│   ├── hybrid-auditor/                 # Hybrid Identity (AAD Connect) — sync staleness, PHS, writeback, SSO
 │   ├── storage-auditor/                # Storage account public access, encryption, soft delete
 │   ├── activitylog-auditor/            # Activity Log diagnostic settings and alerting
 │   ├── nsg-auditor/                    # NSG open ports, orphaned groups
@@ -179,7 +181,8 @@ SecurityAuditScripts/
 │   ├── sharepoint-auditor/             # SharePoint/OneDrive external sharing (SP-01–SP-06)
 │   ├── teams-auditor/                  # Teams federation, guest access, meeting policies (TM-01–TM-06)
 │   ├── intune-auditor/                 # Intune device compliance and CA enforcement (IN-01–IN-05)
-│   └── exchange-auditor/               # Transport rules, delegation, audit logging (EX-01–EX-08)
+│   ├── exchange-auditor/               # Transport rules, delegation, audit logging (EX-01–EX-08)
+│   └── mde-auditor/                    # Defender for Endpoint — onboarding, RTP, encryption, tamper, scan age
 ├── Email/
 │   ├── README.md
 │   └── email-security-auditor/         # SPF, DKIM, DMARC DNS checks
@@ -244,6 +247,8 @@ SecurityAuditScripts/
 | [Defender Auditor](./Azure/defender-auditor/) | Audits Defender for Cloud plan enablement per resource type, secure score, security contacts, and auto-provisioning of monitoring agents. | JSON, CSV, HTML |
 | [Policy Auditor](./Azure/policy-auditor/) | Checks Azure Policy assignments, compliance state, and exemptions across the subscription or management group. | JSON, CSV, HTML |
 | [Backup Auditor](./Azure/backup-auditor/) | Audits Azure Backup vault coverage, backup policies, retention rules, redundancy settings, and soft-delete configuration. | JSON, CSV, HTML |
+| [Entra Password Policy Auditor](./Azure/entrapwd-auditor/) | Audits Entra ID password policy — password expiry enforcement, SSPR coverage, smart lockout thresholds, security defaults vs CA policy, and banned password protection. | JSON, CSV, HTML |
+| [Hybrid Identity Auditor](./Azure/hybrid-auditor/) | Audits Hybrid Identity (AAD Connect / Entra Connect) posture — sync staleness, Password Hash Sync, password writeback, accidental deletion prevention, and Seamless SSO. Cloud-only tenants receive a single INFO finding and exit cleanly. | JSON, CSV, HTML |
 
 ### M365 / Exchange Online
 
@@ -254,6 +259,7 @@ SecurityAuditScripts/
 | [Teams Auditor](./M365/teams-auditor/) | Audits Microsoft Teams security posture — external federation, guest access and channel permissions, meeting lobby bypass, recording expiry, and app installation policies. Requires MicrosoftTeams module. | JSON, CSV, HTML |
 | [Intune Auditor](./M365/intune-auditor/) | Audits Intune device compliance — missing platform policies, grace period, CA device enforcement, non-compliant device access, and Windows auto-enrollment. Requires Microsoft.Graph module. | JSON, CSV, HTML |
 | [Exchange Auditor](./M365/exchange-auditor/) | Audits Exchange Online transport rules, remote domain auto-forwarding, mailbox FullAccess delegation, shared mailbox sign-in, per-mailbox and admin audit logging, and SMTP AUTH. Requires ExchangeOnlineManagement and Microsoft.Graph modules. | JSON, CSV, HTML |
+| [Defender for Endpoint Auditor](./M365/mde-auditor/) | Audits Defender for Endpoint device security posture via Microsoft Graph — Windows device MDE onboarding status, real-time protection, BitLocker encryption, tamper protection, and antivirus scan staleness. Requires M365 Business Premium or MDE Plan 1/2 licence. | JSON, CSV, HTML |
 
 ### On-Premises — Windows
 
