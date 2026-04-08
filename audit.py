@@ -177,6 +177,11 @@ LINUX_GROUP: List[str] = [
     "linux_user", "linux_firewall", "linux_sysctl", "linux_patch", "linux_ssh",
 ]
 
+# Top-5 auditors per platform for --quick triage mode (time-constrained engagements).
+# Ordered by SMB impact: identity/access first, then data exposure, then logging.
+QUICK_AWS: List[str] = ["iam", "s3", "cloudtrail", "root", "sg"]
+QUICK_LINUX: List[str] = ["linux_ssh", "linux_user", "linux_patch", "linux_firewall", "linux_sysctl"]
+
 # Azure / Windows PS1 scripts — cannot run on Linux; print instructions only
 WINDOWS_PS1: Dict[str, str] = {
     "keyvault":     "Azure/keyvault-auditor/keyvault_auditor.ps1",
@@ -333,6 +338,10 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     groups.add_argument("--azure",   action="store_true", help="Print Azure PS1 instructions (Windows-only scripts)")
     groups.add_argument("--windows", action="store_true", help="Print Windows PS1 instructions")
     groups.add_argument("--all",     action="store_true", help="Run all Python auditors + print PS1 instructions")
+    groups.add_argument("--quick",   action="store_true",
+                        help="Triage mode: restrict --aws/--linux/--all to top-5 auditors per platform "
+                             f"(AWS: {', '.join(QUICK_AWS)}; "
+                             f"Linux: {', '.join(QUICK_LINUX)})")
     groups.add_argument("--email",   action="store_true", help="Run email security auditor (requires --domain)")
     groups.add_argument("--ssl",     action="store_true", help="Run SSL/TLS certificate auditor (requires --domain)")
     groups.add_argument("--http-headers", action="store_true", help="Run HTTP security headers auditor (requires --domain)")
@@ -405,6 +414,12 @@ def select_auditors(args: argparse.Namespace):
         for name in AUDITOR_MAP:
             if getattr(args, name, False) and name not in selected:
                 selected.append(name)
+
+    if args.quick:
+        quick_set = set(QUICK_AWS) | set(QUICK_LINUX)
+        # Individually-flagged auditors (not via group flags) are always kept
+        individually_flagged = {n for n in AUDITOR_MAP if getattr(args, n, False)}
+        selected = [s for s in selected if s in quick_set or s in individually_flagged]
 
     return selected, show_ps1
 

@@ -30,6 +30,12 @@
 .PARAMETER AllSubscriptions
     Pass -AllSubscriptions to all Azure scripts that support it.
 
+.PARAMETER Quick
+    Triage mode: run only top-priority auditors per platform for time-constrained engagements.
+    Azure: entra, entrapwd, subscription, nsg, defender.
+    M365:  m365, exchange, sharepoint.
+    Windows: ad, localuser, winfirewall, bitlocker, mde.
+
 .PARAMETER SkipSummary
     Skip the exec_summary.py invocation even if Python is available.
 
@@ -39,6 +45,7 @@
 .EXAMPLE
     .\Run-Audit.ps1 -Client "Acme Corp" -Azure -AllSubscriptions
     .\Run-Audit.ps1 -Client "Acme Corp" -All -Open
+    .\Run-Audit.ps1 -Client "Acme Corp" -All -Quick
     .\Run-Audit.ps1 -Client "Acme Corp" -M365 -SkipSummary
     .\Run-Audit.ps1 -Client "Acme Corp" -Azure -OutputDir C:\Reports
 #>
@@ -57,6 +64,8 @@ param(
     [switch]$All,
 
     [switch]$AllSubscriptions,
+
+    [switch]$Quick,
 
     [switch]$SkipSummary,
 
@@ -157,6 +166,18 @@ $RunList = @()
 if ($Azure  -or $All) { $RunList += $AzureAuditors  }
 if ($M365   -or $All) { $RunList += $M365Auditors   }
 if ($Windows -or $All) { $RunList += $WindowsAuditors }
+
+# ── Quick mode filter ─────────────────────────────────────────────────────────
+
+if ($Quick) {
+    $QuickAzure   = @('entra', 'entrapwd', 'subscription', 'nsg', 'defender')
+    $QuickM365    = @('m365', 'exchange', 'sharepoint')
+    $QuickWindows = @('ad', 'localuser', 'winfirewall', 'bitlocker', 'mde')
+    $QuickNames   = $QuickAzure + $QuickM365 + $QuickWindows
+    $RunList = $RunList | Where-Object { $QuickNames -contains $_.Name }
+    Write-Host "  Quick mode: $($RunList.Count) priority auditors selected" -ForegroundColor Yellow
+    Write-Host ""
+}
 
 Write-Host "  Auditors to run: $($RunList.Count)" -ForegroundColor Cyan
 Write-Host ""
