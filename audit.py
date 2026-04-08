@@ -253,7 +253,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
   * Supports --regions (multi-region scan). All others use the default region
     from your AWS CLI profile.
 
-━━━ LINUX AUDITORS (--linux runs all 4) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━ LINUX AUDITORS (--linux runs all 5) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   --linux_user      Local users, sudoers, password policy, SSH keys
   --linux_firewall  iptables/nftables/ufw rules, default policy
