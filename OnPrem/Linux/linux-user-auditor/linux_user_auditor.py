@@ -224,7 +224,7 @@ def write_html(report, path):
     findings = report['findings']
     summary = report['summary']
     generated = report['generated_at']
-    hostname = report.get('hostname', 'unknown')
+    hostname = html.escape(report.get('hostname', 'unknown'))
 
     risk_colors = {
         'CRITICAL': '#dc3545',

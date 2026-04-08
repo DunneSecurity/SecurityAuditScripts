@@ -213,7 +213,7 @@ def write_html(report, path):
     findings  = report['findings']
     summary   = report['summary']
     generated = report['generated_at']
-    hostname  = report.get('hostname', 'unknown')
+    hostname  = html.escape(report.get('hostname', 'unknown'))
 
     SEV_COLOR = {
         'CRITICAL': '#dc3545', 'HIGH': '#fd7e14', 'MEDIUM': '#ffc107', 'LOW': '#28a745',
