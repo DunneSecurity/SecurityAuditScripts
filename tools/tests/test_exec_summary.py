@@ -396,3 +396,166 @@ def test_write_html_no_warning_section_when_warnings_empty(tmp_path):
     )
     content = (tmp_path / "exec_summary.html").read_text()
     assert '<div class="warn-section">' not in content
+
+
+# ── e2e integration tests (run() full pipeline) ────────────────────────────────
+
+# Representative AWS-style report fixture (s3_auditor schema)
+_S3_FIXTURE = {
+    "generated_at": "2026-01-01T00:00:00+00:00",
+    "findings": [
+        {
+            "risk_level": "CRITICAL",
+            "severity_score": 9,
+            "name": "acme-public-backup",
+            "flags": ["❌ Public access enabled", "❌ No encryption"],
+            "remediations": ["Block public access via S3 console", "Enable SSE-S3 encryption"],
+        },
+        {
+            "risk_level": "HIGH",
+            "severity_score": 7,
+            "name": "acme-logs",
+            "flags": ["ℹ️ Versioning disabled"],
+            "remediations": ["Enable versioning: S3 Console → Properties → Bucket Versioning → Enable"],
+        },
+    ],
+    "summary": {"total_buckets": 2, "critical": 1, "high": 1, "medium": 0, "low": 0},
+}
+
+# Representative AWS-style report fixture (cloudtrail_auditor schema)
+_CLOUDTRAIL_FIXTURE = {
+    "generated_at": "2026-01-01T00:00:00+00:00",
+    "findings": [
+        {
+            "risk_level": "MEDIUM",
+            "severity_score": 4,
+            "name": "us-east-1-trail",
+            "flags": ["⚠️ Multi-region disabled"],
+            "remediations": ["Enable multi-region trail in CloudTrail console"],
+        }
+    ],
+    "summary": {"total_trails": 1, "critical": 0, "high": 0, "medium": 1, "low": 0},
+}
+
+# Representative Linux-style report fixture (linux_ssh_auditor schema)
+_SSH_FIXTURE = {
+    "generated_at": "2026-01-01T00:00:00+00:00",
+    "ssh_daemon_installed": True,
+    "findings": [
+        {
+            "risk_level": "HIGH",
+            "param": "PermitRootLogin",
+            "actual": "yes",
+            "expected": "no",
+            "description": "Root login via SSH is permitted",
+            "recommendation": "Set PermitRootLogin no in /etc/ssh/sshd_config",
+        }
+    ],
+    "summary": {"host": "web01", "total": 1},
+}
+
+
+def _write_fixture(directory, filename, data):
+    path = directory / filename
+    path.write_text(json.dumps(data))
+    return path
+
+
+def test_run_creates_html_and_sidecar(tmp_path):
+    """run() with two fixtures → HTML and sidecar JSON both created."""
+    _write_fixture(tmp_path, "s3_report.json", _S3_FIXTURE)
+    _write_fixture(tmp_path, "cloudtrail_report.json", _CLOUDTRAIL_FIXTURE)
+    out = str(tmp_path / "exec_summary.html")
+    es.run(input_dir=str(tmp_path), output_path=out)
+    assert (tmp_path / "exec_summary.html").exists()
+    assert (tmp_path / "exec_summary_data.json").exists()
+
+
+def test_run_score_reflects_critical_findings(tmp_path):
+    """Fixture with a CRITICAL finding → score < 100, grade not A."""
+    _write_fixture(tmp_path, "s3_report.json", _S3_FIXTURE)
+    out = str(tmp_path / "exec_summary.html")
+    es.run(input_dir=str(tmp_path), output_path=out)
+    sidecar = json.loads((tmp_path / "exec_summary_data.json").read_text())
+    assert sidecar["score"] < 100
+    assert sidecar["grade"] != "A"
+
+
+def test_run_html_contains_pillar_names(tmp_path):
+    """s3 + cloudtrail fixtures → HTML contains both pillar labels."""
+    _write_fixture(tmp_path, "s3_report.json", _S3_FIXTURE)
+    _write_fixture(tmp_path, "cloudtrail_report.json", _CLOUDTRAIL_FIXTURE)
+    out = str(tmp_path / "exec_summary.html")
+    es.run(input_dir=str(tmp_path), output_path=out)
+    content = (tmp_path / "exec_summary.html").read_text()
+    assert "S3 Buckets" in content
+    assert "CloudTrail" in content
+
+
+def test_run_html_contains_top_finding_resource(tmp_path):
+    """CRITICAL finding with a named resource → resource name appears in HTML."""
+    _write_fixture(tmp_path, "s3_report.json", _S3_FIXTURE)
+    out = str(tmp_path / "exec_summary.html")
+    es.run(input_dir=str(tmp_path), output_path=out)
+    content = (tmp_path / "exec_summary.html").read_text()
+    assert "acme-public-backup" in content
+
+
+def test_run_empty_dir_still_creates_html(tmp_path):
+    """No report files → run() completes without crashing and creates HTML."""
+    out = str(tmp_path / "exec_summary.html")
+    es.run(input_dir=str(tmp_path), output_path=out)
+    assert (tmp_path / "exec_summary.html").exists()
+
+
+def test_run_audit_manifest_not_run_pillar(tmp_path):
+    """audit_manifest.json lists 'iam' but no iam_report.json → HTML shows NOT RUN."""
+    _write_fixture(tmp_path, "s3_report.json", _S3_FIXTURE)
+    manifest = {"auditors_attempted": ["s3", "iam"]}
+    (tmp_path / "audit_manifest.json").write_text(json.dumps(manifest))
+    out = str(tmp_path / "exec_summary.html")
+    es.run(input_dir=str(tmp_path), output_path=out)
+    content = (tmp_path / "exec_summary.html").read_text()
+    assert "NOT RUN" in content
+
+
+def test_run_partial_azure_warning_in_html(tmp_path):
+    """One Azure report present, rest missing → partial-run warning appears in HTML."""
+    _write_fixture(tmp_path, "keyvault_report.json",
+                   {"generated_at": "2026-01-01", "findings": [], "summary": {}})
+    out = str(tmp_path / "exec_summary.html")
+    es.run(input_dir=str(tmp_path), output_path=out)
+    content = (tmp_path / "exec_summary.html").read_text()
+    # At least one missing Azure file name should appear in the warning section
+    assert any(p in content for p in es.AZURE_PATTERNS if p != "keyvault_report.json")
+
+
+def test_run_linux_style_finding_schema(tmp_path):
+    """Linux-style finding (recommendation/param fields) → pipeline completes, score < 100."""
+    _write_fixture(tmp_path, "ssh_report.json", _SSH_FIXTURE)
+    out = str(tmp_path / "exec_summary.html")
+    es.run(input_dir=str(tmp_path), output_path=out)
+    assert (tmp_path / "exec_summary.html").exists()
+    sidecar = json.loads((tmp_path / "exec_summary_data.json").read_text())
+    assert sidecar["score"] < 100
+
+
+def test_run_html_permissions(tmp_path):
+    """Output HTML has 0o600 permissions."""
+    _write_fixture(tmp_path, "s3_report.json", _S3_FIXTURE)
+    out = str(tmp_path / "exec_summary.html")
+    es.run(input_dir=str(tmp_path), output_path=out)
+    assert (tmp_path / "exec_summary.html").stat().st_mode & 0o777 == 0o600
+
+
+def test_run_sidecar_contains_score_and_grade(tmp_path):
+    """Sidecar JSON has score, grade, and pillar_stats keys."""
+    _write_fixture(tmp_path, "s3_report.json", _S3_FIXTURE)
+    _write_fixture(tmp_path, "cloudtrail_report.json", _CLOUDTRAIL_FIXTURE)
+    out = str(tmp_path / "exec_summary.html")
+    es.run(input_dir=str(tmp_path), output_path=out)
+    sidecar = json.loads((tmp_path / "exec_summary_data.json").read_text())
+    assert "score" in sidecar
+    assert "grade" in sidecar
+    assert "pillar_stats" in sidecar
+    assert len(sidecar["pillar_stats"]) == 2
