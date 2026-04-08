@@ -117,7 +117,7 @@ class TestSelectAuditors(unittest.TestCase):
             self.assertIn(name, selected)
         self.assertFalse(show_ps1)
 
-    def test_linux_selects_exactly_4(self):
+    def test_linux_selects_exactly_5(self):
         args = self._args("--linux")
         selected, _ = audit.select_auditors(args)
         self.assertEqual(len(selected), 5)

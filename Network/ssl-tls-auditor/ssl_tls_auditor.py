@@ -596,11 +596,13 @@ def write_html(report: dict, prefix: str, client_name: str = "",
     footer_client = html.escape(client_name) if client_name else "Security Assessment"
     footer_assessor = html.escape(assessor) if assessor else "SecurityAuditScripts"
 
+    client_title_suffix = f" — {html.escape(client_name)}" if client_name else ""
+
     html_content = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>SSL/TLS Audit \u2014 {html.escape(domain)}{' \u2014 ' + html.escape(client_name) if client_name else ''}</title>
+<title>SSL/TLS Audit — {html.escape(domain)}{client_title_suffix}</title>
 <style>
 {get_styles()}
 </style>

@@ -242,6 +242,13 @@ Each auditor produces JSON + CSV + HTML output and maps findings to CIS v8 Contr
 
 Pull requests and issues welcome. Use `tools/add_auditor.py` to scaffold new auditors — it auto-wires the script into `audit.py` and `exec_summary.py`.
 
+### Local test setup
+
+```bash
+pip install -r requirements-test.txt
+pytest AWS/ OnPrem/Linux/ Network/ Email/ tests/ -v --import-mode=importlib
+```
+
 ---
 
 ## Disclaimer
