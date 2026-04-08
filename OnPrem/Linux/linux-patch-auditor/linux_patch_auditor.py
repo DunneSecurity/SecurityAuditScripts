@@ -19,6 +19,7 @@ import os
 import sys
 import json
 import csv
+import html
 import argparse
 import logging
 import subprocess
@@ -408,8 +409,8 @@ def write_html(report, path):
     result = report['findings'][0] if report['findings'] else {}
     summary = report['summary']
     generated = report['generated_at']
-    hostname = report.get('hostname', 'unknown')
-    kernel = report.get('kernel', 'unknown')
+    hostname = html.escape(report.get('hostname', 'unknown'))
+    kernel = html.escape(report.get('kernel', 'unknown'))
 
     risk_colors = {
         'CRITICAL': '#dc3545',
@@ -422,28 +423,28 @@ def write_html(report, path):
 
     flags_html = ''
     for flag in result.get('flags', []):
-        flags_html += f'<li style="margin:4px 0">{flag}</li>\n'
+        flags_html += f'<li style="margin:4px 0">{html.escape(flag)}</li>\n'
 
     remediations_html = ''
     for rem in result.get('remediations', []):
-        remediations_html += f'<li style="margin:4px 0">{rem}</li>\n'
+        remediations_html += f'<li style="margin:4px 0">{html.escape(rem)}</li>\n'
 
     pending_pkgs = result.get('pending_packages', [])
-    pkgs_html = ', '.join(pending_pkgs) if pending_pkgs else 'None'
+    pkgs_html = ', '.join(html.escape(p) for p in pending_pkgs) if pending_pkgs else 'None'
 
-    pm = result.get('package_manager') or 'N/A'
+    pm = html.escape(result.get('package_manager') or 'N/A')
     total_updates = result.get('total_updates')
     security_updates = result.get('security_updates')
     days_since = result.get('days_since_update')
     auto_enabled = result.get('auto_updates_enabled')
-    auto_agent = result.get('auto_update_agent', 'N/A')
+    auto_agent = html.escape(result.get('auto_update_agent', 'N/A'))
 
     total_str = str(total_updates) if total_updates is not None else 'N/A'
     security_str = str(security_updates) if security_updates is not None else 'N/A'
     days_str = str(days_since) if days_since is not None else 'N/A'
     auto_str = 'Yes' if auto_enabled else ('No' if auto_enabled is False else 'N/A')
 
-    html = f"""<!DOCTYPE html>
+    html_out = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -499,7 +500,7 @@ def write_html(report, path):
 </html>"""
 
     with open(path, 'w') as f:
-        f.write(html)
+        f.write(html_out)
     os.chmod(path, 0o600)
     log.info(f"HTML report: {path}")
 

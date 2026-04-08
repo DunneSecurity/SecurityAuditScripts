@@ -16,6 +16,7 @@ import sys
 import re
 import json
 import csv
+import html
 import argparse
 import logging
 import subprocess
@@ -239,13 +240,13 @@ def write_html(report, path):
         <tr>
             <td><span style="background:{color};color:white;padding:2px 8px;border-radius:8px;font-weight:bold">{f['severity']}</span></td>
             <td style="font-weight:bold">{f['score']}/10</td>
-            <td>{f['finding_type']}</td>
-            <td>{f.get('username', '')}</td>
-            <td style="font-size:0.85em">{f.get('detail', '')}</td>
-            <td style="font-size:0.85em;color:#555">{f.get('recommendation', '')}</td>
+            <td>{html.escape(f['finding_type'])}</td>
+            <td>{html.escape(f.get('username', ''))}</td>
+            <td style="font-size:0.85em">{html.escape(f.get('detail', ''))}</td>
+            <td style="font-size:0.85em;color:#555">{html.escape(f.get('recommendation', ''))}</td>
         </tr>"""
 
-    html = f"""<!DOCTYPE html>
+    html_out = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -279,7 +280,7 @@ def write_html(report, path):
 </html>"""
 
     with open(path, 'w') as f:
-        f.write(html)
+        f.write(html_out)
     os.chmod(path, 0o600)
     log.info(f"HTML report: {path}")
 

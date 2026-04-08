@@ -18,6 +18,7 @@ import os
 import sys
 import json
 import csv
+import html
 import socket
 import argparse
 import logging
@@ -230,8 +231,8 @@ def write_html(report, path):
         sev_color = SEV_COLOR.get(sev, '#999')
         # P2-4: combined param+description cell — description first, param as reference
         param_cell = (
-            f'<td><div style="font-size:0.88em;font-weight:500">{r["description"]}</div>'
-            f'<div style="font-family:monospace;font-size:0.76em;color:#888;margin-top:2px">{r["param"]}</div></td>'
+            f'<td><div style="font-size:0.88em;font-weight:500">{html.escape(r["description"])}</div>'
+            f'<div style="font-family:monospace;font-size:0.76em;color:#888;margin-top:2px">{html.escape(r["param"])}</div></td>'
         )
         if r['compliant'] is None:
             rows += (
@@ -239,7 +240,7 @@ def write_html(report, path):
                 f'<td><span style="background:#95a5a6;color:white;padding:2px 8px;border-radius:4px;font-weight:bold">\u2139\ufe0f SKIP</span></td>'
                 f'<td><span style="background:{sev_color};color:white;padding:2px 8px;border-radius:4px;font-size:0.78em;font-weight:bold">{sev}</span></td>'
                 + param_cell +
-                f'<td style="font-family:monospace">{r["expected"]}</td>'
+                f'<td style="font-family:monospace">{html.escape(str(r["expected"]))}</td>'
                 f'<td style="font-family:monospace;color:#aaa">N/A</td>'
                 f'<td style="font-size:0.8em;color:#bbb">Parameter unavailable on this kernel</td>'
                 f'</tr>'
@@ -250,20 +251,20 @@ def write_html(report, path):
                 f'<td><span style="background:#28a745;color:white;padding:2px 8px;border-radius:4px;font-weight:bold">\u2705 PASS</span></td>'
                 f'<td><span style="background:{sev_color};color:white;padding:2px 8px;border-radius:4px;font-size:0.78em;font-weight:bold">{sev}</span></td>'
                 + param_cell +
-                f'<td style="font-family:monospace">{r["expected"]}</td>'
-                f'<td style="font-family:monospace">{r["actual"]}</td>'
+                f'<td style="font-family:monospace">{html.escape(str(r["expected"]))}</td>'
+                f'<td style="font-family:monospace">{html.escape(str(r["actual"]))}</td>'
                 f'<td style="font-size:0.8em;color:#aaa">\u2014</td>'
                 f'</tr>'
             )
         else:
-            remediation = r.get('remediation') or ''
+            remediation = html.escape(r.get('remediation') or '')
             rows += (
                 f'<tr class="row-fail">'
                 f'<td><span style="background:#dc3545;color:white;padding:2px 8px;border-radius:4px;font-weight:bold">\u274c FAIL</span></td>'
                 f'<td><span style="background:{sev_color};color:white;padding:2px 8px;border-radius:4px;font-size:0.78em;font-weight:bold">{sev}</span></td>'
                 + param_cell +
-                f'<td style="font-family:monospace">{r["expected"]}</td>'
-                f'<td style="font-family:monospace">{r["actual"]}</td>'
+                f'<td style="font-family:monospace">{html.escape(str(r["expected"]))}</td>'
+                f'<td style="font-family:monospace">{html.escape(str(r["actual"]))}</td>'
                 f'<td style="font-size:0.8em;color:#555">{remediation}</td>'
                 f'</tr>'
             )
@@ -283,7 +284,7 @@ def write_html(report, path):
         "  .toggle-btn:hover { background:#e0e8ff; }\n"
     )
 
-    html = f"""<!DOCTYPE html>
+    html_out = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -318,7 +319,7 @@ def write_html(report, path):
 </html>"""
 
     with open(path, 'w') as f:
-        f.write(html)
+        f.write(html_out)
     os.chmod(path, 0o600)
     log.info(f"HTML report: {path}")
 

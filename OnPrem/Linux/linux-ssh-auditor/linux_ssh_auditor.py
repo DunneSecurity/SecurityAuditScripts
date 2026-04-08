@@ -18,6 +18,7 @@ import os
 import sys
 import json
 import csv
+import html
 import shutil
 import socket
 import argparse
@@ -381,10 +382,10 @@ def write_html(report, path):
                 f'border-radius:4px;font-weight:bold">\u2014 N/A</span></td>'
                 f'<td><span style="background:{sev_color};color:white;padding:2px 8px;'
                 f'border-radius:4px;font-size:0.78em;font-weight:bold">{sev} if wrong</span></td>'
-                f'<td style="font-family:monospace;font-size:0.85em">{f["param"]}</td>'
-                f'<td style="font-family:monospace">{f["expected"]}</td>'
+                f'<td style="font-family:monospace;font-size:0.85em">{html.escape(f["param"])}</td>'
+                f'<td style="font-family:monospace">{html.escape(str(f["expected"]))}</td>'
                 f'<td style="font-family:monospace;color:#aaa">N/A</td>'
-                f'<td style="font-size:0.85em;color:#888">{f["description"]}</td>'
+                f'<td style="font-size:0.85em;color:#888">{html.escape(f["description"])}</td>'
                 f'<td style="font-size:0.8em;color:#bbb">Re-run with sudo</td>'
                 f'</tr>'
             )
@@ -395,25 +396,25 @@ def write_html(report, path):
                 f'border-radius:4px;font-weight:bold">\u2705 PASS</span></td>'
                 f'<td><span style="background:{sev_color};color:white;padding:2px 8px;'
                 f'border-radius:4px;font-size:0.78em;font-weight:bold">{sev}</span></td>'
-                f'<td style="font-family:monospace;font-size:0.85em">{f["param"]}</td>'
-                f'<td style="font-family:monospace">{f["expected"]}</td>'
-                f'<td style="font-family:monospace">{f["actual"]}</td>'
-                f'<td style="font-size:0.85em">{f["description"]}</td>'
+                f'<td style="font-family:monospace;font-size:0.85em">{html.escape(f["param"])}</td>'
+                f'<td style="font-family:monospace">{html.escape(str(f["expected"]))}</td>'
+                f'<td style="font-family:monospace">{html.escape(str(f["actual"]))}</td>'
+                f'<td style="font-size:0.85em">{html.escape(f["description"])}</td>'
                 f'<td style="font-size:0.8em;color:#aaa">\u2014</td>'
                 f'</tr>'
             )
         else:
-            description = f'{f["description"]} \u2014 currently: <code>{f["actual"]}</code>'
-            remediation = f.get('remediation') or ''
+            description = f'{html.escape(f["description"])} \u2014 currently: <code>{html.escape(str(f["actual"]))}</code>'
+            remediation = html.escape(f.get('remediation') or '')
             rows += (
                 f'<tr class="row-fail">'
                 f'<td><span style="background:#dc3545;color:white;padding:2px 8px;'
                 f'border-radius:4px;font-weight:bold">\u274c FAIL</span></td>'
                 f'<td><span style="background:{sev_color};color:white;padding:2px 8px;'
                 f'border-radius:4px;font-size:0.78em;font-weight:bold">{sev}</span></td>'
-                f'<td style="font-family:monospace;font-size:0.85em">{f["param"]}</td>'
-                f'<td style="font-family:monospace">{f["expected"]}</td>'
-                f'<td style="font-family:monospace">{f["actual"]}</td>'
+                f'<td style="font-family:monospace;font-size:0.85em">{html.escape(f["param"])}</td>'
+                f'<td style="font-family:monospace">{html.escape(str(f["expected"]))}</td>'
+                f'<td style="font-family:monospace">{html.escape(str(f["actual"]))}</td>'
                 f'<td style="font-size:0.85em">{description}</td>'
                 f'<td style="font-size:0.8em;color:#555">{remediation}</td>'
                 f'</tr>'
@@ -435,7 +436,7 @@ def write_html(report, path):
         "  .toggle-btn:hover { background:#e0e8ff; }\n"
     )
 
-    html = f"""<!DOCTYPE html>
+    html_out = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -470,7 +471,7 @@ def write_html(report, path):
 </html>"""
 
     with open(path, 'w') as f:
-        f.write(html)
+        f.write(html_out)
     os.chmod(path, 0o600)
     log.info(f"HTML report: {path}")
 

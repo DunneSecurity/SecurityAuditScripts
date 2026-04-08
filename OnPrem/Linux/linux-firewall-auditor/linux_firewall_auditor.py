@@ -11,7 +11,7 @@ Usage:
     python3 linux_firewall_auditor.py --format all
 """
 
-import os, sys, re, json, csv, argparse, logging, subprocess
+import os, sys, re, json, csv, html, argparse, logging, subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -359,8 +359,8 @@ def write_html(report, path):
     findings = report['findings']
     summary = report['summary']
     generated = report['generated_at']
-    hostname = report['hostname']
-    backend = report['firewall_backend']
+    hostname = html.escape(report['hostname'])
+    backend = html.escape(report['firewall_backend'])
 
     risk_colors = {
         'CRITICAL': '#dc3545',
@@ -372,20 +372,21 @@ def write_html(report, path):
     rows = ''
     for f in findings:
         color = risk_colors.get(f.get('severity', 'LOW'), '#999')
-        port_svc = f'{f["port"]}/{f["service"]}' if f.get('port') else '—'
-        rec = f.get('recommendation', '') or '—'
-        detail = f.get('detail', '') or '—'
+        port_svc = html.escape(f'{f["port"]}/{f["service"]}') if f.get('port') else '—'
+        rec = html.escape(f.get('recommendation', '') or '—')
+        detail = html.escape(f.get('detail', '') or '—')
+        finding_type = html.escape(f.get('finding_type', ''))
         rows += f"""
         <tr>
             <td><span style="background:{color};color:white;padding:2px 8px;border-radius:8px;font-weight:bold">{f.get('severity', '')}</span></td>
             <td style="font-weight:bold">{f.get('score', 0)}/10</td>
-            <td>{f.get('finding_type', '')}</td>
+            <td>{finding_type}</td>
             <td style="font-size:0.85em">{detail}</td>
             <td><code>{port_svc}</code></td>
             <td style="font-size:0.85em;color:#555">{rec}</td>
         </tr>"""
 
-    html = f"""<!DOCTYPE html>
+    html_out = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -426,7 +427,7 @@ def write_html(report, path):
 </html>"""
 
     with open(path, 'w') as f:
-        f.write(html)
+        f.write(html_out)
     os.chmod(path, 0o600)
     log.info(f'HTML report: {path}')
 

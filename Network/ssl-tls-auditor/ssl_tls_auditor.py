@@ -503,6 +503,7 @@ def write_json(report: dict, prefix: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
         json.dump(report, f, indent=2, default=str)
+    path.chmod(0o600)
     log.info("JSON report: %s", path)
 
 
@@ -516,6 +517,7 @@ def write_csv(findings: list, prefix: str) -> None:
         writer = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(findings)
+    path.chmod(0o600)
     log.info("CSV report: %s", path)
 
 
@@ -633,6 +635,7 @@ def write_html(report: dict, prefix: str, client_name: str = "",
 </html>"""
 
     path.write_text(html_content)
+    path.chmod(0o600)
     log.info("HTML report: %s", path)
 
 
