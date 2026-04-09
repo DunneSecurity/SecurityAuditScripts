@@ -509,14 +509,16 @@ def test_run_empty_dir_still_creates_html(tmp_path):
 
 
 def test_run_audit_manifest_not_run_pillar(tmp_path):
-    """audit_manifest.json lists 'iam' but no iam_report.json → HTML shows NOT RUN."""
+    """audit_manifest.json lists 'iam' but no iam_report.json → HTML shows in Services Not Assessed."""
     _write_fixture(tmp_path, "s3_report.json", _S3_FIXTURE)
     manifest = {"auditors_attempted": ["s3", "iam"]}
     (tmp_path / "audit_manifest.json").write_text(json.dumps(manifest))
     out = str(tmp_path / "exec_summary.html")
     es.run(input_dir=str(tmp_path), output_path=out)
     content = (tmp_path / "exec_summary.html").read_text()
-    assert "NOT RUN" in content
+    assert "Services Not Assessed" in content
+    assert "Not Run" in content
+    assert "IAM Privileges" in content
 
 
 def test_run_partial_azure_warning_in_html(tmp_path):

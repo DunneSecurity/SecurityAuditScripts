@@ -433,23 +433,23 @@ def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
           </div>
           <div class="pillar-total">{ps['total']} resources checked</div>
         </div>"""
-    # Not-run pillar cards (auditor attempted but produced no report JSON)
-    for pname in (not_run_pillars or []):
-        label = html_lib.escape(PILLAR_LABELS.get(pname, pname.upper()))
-        pillar_cards_html += (
-            f'<div class="pillar-card" style="border-left:5px solid #adb5bd;opacity:0.65">'
-            f'<div class="pillar-name">{label}</div>'
-            f'<div class="pillar-risk" style="color:#adb5bd">NOT RUN</div>'
-            f'<div class="pillar-total" style="color:#adb5bd">Auditor ran but no report found</div>'
-            f'</div>'
-        )
-    # Build N/A section rows
+    # Build Services Not Assessed rows — N/A pillars + not-run pillars
     for ps in na_pillars:
         reason = html_lib.escape(ps["na_reason"]) if ps["na_reason"] else "Not applicable on this tenant."
         na_rows_html += (
             f'<tr>'
             f'<td><strong>{html_lib.escape(ps["label"])}</strong></td>'
+            f'<td><span class="na-tag na-tag-license">Not Licensed</span></td>'
             f'<td>{reason}</td>'
+            f'</tr>\n'
+        )
+    for pname in (not_run_pillars or []):
+        label = html_lib.escape(PILLAR_LABELS.get(pname, pname.upper()))
+        na_rows_html += (
+            f'<tr>'
+            f'<td><strong>{label}</strong></td>'
+            f'<td><span class="na-tag na-tag-norun">Not Run</span></td>'
+            f'<td>Auditor was invoked but produced no output — check the audit log for this pillar.</td>'
             f'</tr>\n'
         )
 
@@ -672,8 +672,12 @@ def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
   .na-section h3 {{ margin:0 0 4px; color:#495057; font-size:0.95em; }}
   .na-section p {{ margin:0 0 12px; color:#6c757d; font-size:0.82em; }}
   .na-section table {{ box-shadow:none; background:transparent; margin:0; }}
-  .na-section td {{ font-size:0.85em; color:#495057; border-bottom:1px solid #e9ecef; padding:8px 10px; }}
-  .na-section td:first-child {{ font-weight:600; white-space:nowrap; width:220px; }}
+  .na-section td {{ font-size:0.85em; color:#495057; border-bottom:1px solid #e9ecef; padding:8px 10px; vertical-align:top; }}
+  .na-section td:first-child {{ white-space:nowrap; width:200px; }}
+  .na-section td:nth-child(2) {{ white-space:nowrap; width:110px; }}
+  .na-tag {{ display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.78em; font-weight:600; letter-spacing:0.3px; }}
+  .na-tag-license {{ background:#e9ecef; color:#495057; }}
+  .na-tag-norun {{ background:#fff3cd; color:#856404; }}
   .crit-callout {{ border-top:3px solid #dc3545; }}
   .crit-callout h2 {{ color:#dc3545; border-color:#dc354533; }}
   .crit-items {{ display:flex; flex-direction:column; gap:12px; }}
@@ -713,7 +717,7 @@ def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
 <body>
 <div class="header">
   {client_meta_html}
-  <p style="color:#aaa;margin:8px 0 0;font-size:0.85em">Generated: {html_lib.escape(generated_at)} &nbsp;|&nbsp; {len(pillar_stats) - len(na_pillars)} pillar{'s' if (len(pillar_stats) - len(na_pillars)) != 1 else ''} assessed{(' &nbsp;|&nbsp; ' + str(len(na_pillars)) + ' not assessed (see below)') if na_pillars else ''}</p>
+  <p style="color:#aaa;margin:8px 0 0;font-size:0.85em">Generated: {html_lib.escape(generated_at)} &nbsp;|&nbsp; {len(pillar_stats) - len(na_pillars)} pillar{'s' if (len(pillar_stats) - len(na_pillars)) != 1 else ''} assessed{(' &nbsp;|&nbsp; ' + str(len(na_pillars) + len(not_run_pillars or [])) + ' not assessed (see below)') if (na_pillars or not_run_pillars) else ''}</p>
 </div>
 {scope_section_html}
 {warnings_html}
@@ -724,7 +728,7 @@ def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
 {('''<div class="na-section">
   <h3>&#128683; Services Not Assessed</h3>
   <p>The following services were not scanned because the required licence or configuration was not detected on this tenant. These are not failures — they are included here so the scope of this assessment is fully transparent.</p>
-  <table><tbody>''' + na_rows_html + '''</tbody></table>
+  <table><thead><tr><th style="background:#6c757d;color:#fff;padding:8px 10px;font-size:0.8em;text-align:left">Service</th><th style="background:#6c757d;color:#fff;padding:8px 10px;font-size:0.8em;text-align:left">Status</th><th style="background:#6c757d;color:#fff;padding:8px 10px;font-size:0.8em;text-align:left">Reason</th></tr></thead><tbody>''' + na_rows_html + '''</tbody></table>
 </div>''') if na_rows_html else ''}
 
 <div class="score-zone">
