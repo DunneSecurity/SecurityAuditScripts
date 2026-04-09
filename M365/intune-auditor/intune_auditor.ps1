@@ -251,6 +251,8 @@ function ConvertTo-IntuneCsvReport {
 
 function ConvertTo-IntuneHtmlReport {
     param([array]$Findings, [string]$TenantId)
+    $counts = @{ CRITICAL = 0; HIGH = 0; MEDIUM = 0; LOW = 0 }
+    foreach ($f in $Findings) { if ($counts.ContainsKey($f.Severity)) { $counts[$f.Severity]++ } }
     $rows = ''
     foreach ($f in ($Findings | Sort-Object Score -Descending)) {
         $colour   = Get-SeverityColour $f.Severity
@@ -273,6 +275,9 @@ function ConvertTo-IntuneHtmlReport {
 <style>
   body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;background:#f5f6fa;color:#333}
   .header{background:#1a1a2e;color:#fff;padding:30px 40px}.header h1{margin:0;font-size:1.8em}.header p{margin:5px 0 0;opacity:0.8}
+  .summary{display:flex;gap:20px;padding:20px 40px;flex-wrap:wrap}
+  .card{background:#fff;border-radius:8px;padding:20px 30px;flex:1;min-width:120px;box-shadow:0 2px 8px rgba(0,0,0,0.08);text-align:center}
+  .card .num{font-size:2.5em;font-weight:bold}.card .lbl{color:#666;font-size:.85em;margin-top:4px}
   .section{padding:20px 32px}
   table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08)}
   th{background:#1a1a2e;color:#fff;padding:12px 15px;text-align:left;font-size:0.85em;text-transform:uppercase;letter-spacing:0.5px}
@@ -281,6 +286,13 @@ function ConvertTo-IntuneHtmlReport {
 </style></head>
 <body>
 <div class="header"><h1>Intune Device Compliance Audit</h1><p>Tenant: $tenantDisplay &nbsp;|&nbsp; Generated: $ts</p></div>
+<div class="summary">
+  <div class="card"><div class="num">$($Findings.Count)</div><div class="lbl">Total Findings</div></div>
+  <div class="card"><div class="num" style="color:#dc3545">$($counts.CRITICAL)</div><div class="lbl">CRITICAL</div></div>
+  <div class="card"><div class="num" style="color:#fd7e14">$($counts.HIGH)</div><div class="lbl">HIGH</div></div>
+  <div class="card"><div class="num" style="color:#ffc107">$($counts.MEDIUM)</div><div class="lbl">MEDIUM</div></div>
+  <div class="card"><div class="num" style="color:#28a745">$($counts.LOW)</div><div class="lbl">LOW</div></div>
+</div>
 <div class="section"><table>
   <thead><tr><th>Type</th><th>Resource</th><th>Risk</th><th>CIS</th><th>Recommendation</th></tr></thead>
   <tbody>$rows$noFindings</tbody>
