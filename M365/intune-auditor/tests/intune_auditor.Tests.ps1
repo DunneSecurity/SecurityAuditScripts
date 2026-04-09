@@ -129,7 +129,7 @@ Describe 'Get-IntuneEnrollmentFindings' {
 # License gate
 # ---------------------------------------------------------------------------
 Describe 'License gate' {
-    It 'emits IntuneNotLicensed INFO finding and exits cleanly when Graph returns 403' {
+    It 'emits IntuneNotLicensed LOW finding and exits cleanly when Graph returns 403' {
         # Override the stub so it throws a 403-style error
         Mock Get-MgDeviceManagementDeviceCompliancePolicy {
             throw [System.Exception]::new('403 Forbidden: Intune license not found')
@@ -139,6 +139,6 @@ Describe 'License gate' {
         & "$PSScriptRoot/../intune_auditor.ps1" -Output $tmpPrefix -Format json -TenantDomain 'contoso.com'
         $json = Get-Content "$tmpPrefix.json" -Raw | ConvertFrom-Json
         $json.findings[0].FindingType | Should -Be 'IntuneNotLicensed'
-        $json.findings[0].Severity   | Should -Be 'INFO'
+        $json.findings[0].Severity   | Should -Be 'LOW'
     }
 }

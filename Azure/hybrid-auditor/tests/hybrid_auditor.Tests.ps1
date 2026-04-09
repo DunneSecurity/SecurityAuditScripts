@@ -54,12 +54,12 @@ BeforeAll {
 # Cloud-only tenant guard
 # ---------------------------------------------------------------------------
 Describe 'Cloud-only tenant guard' {
-    It 'emits CloudOnlyTenant INFO finding when onPremisesSyncEnabled is false' {
+    It 'emits CloudOnlyTenant LOW finding when onPremisesSyncEnabled is false' {
         Mock Get-MgOrganization { @(New-TestOrg -SyncEnabled $false) }
         $findings = Get-HybridCloudOnlyGuard
         $f = $findings | Where-Object { $_.FindingType -eq 'CloudOnlyTenant' }
         $f | Should -Not -BeNullOrEmpty
-        $f.Severity | Should -Be 'INFO'
+        $f.Severity | Should -Be 'LOW'
     }
 
     It 'returns empty when onPremisesSyncEnabled is true' {
@@ -190,7 +190,7 @@ Describe 'ConvertTo-HybridJsonReport' {
 
     It 'counts INFO severity findings in total_findings but not in risk buckets' {
         $findings = @(
-            [PSCustomObject]@{ FindingType = 'CloudOnlyTenant'; Severity = 'INFO'; Score = 0; Resource = 'tenant'; CisControl = 'N/A'; Recommendation = '' }
+            [PSCustomObject]@{ FindingType = 'CloudOnlyTenant'; Severity = 'LOW'; Score = 0; Resource = 'tenant'; CisControl = 'N/A'; Recommendation = '' }
         )
         $report = ConvertTo-HybridJsonReport -Findings $findings -TenantId ''
         $report.summary.total_findings | Should -Be 1
