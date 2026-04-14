@@ -389,6 +389,15 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     opts.add_argument("--open",    action="store_true",  help="Open exec_summary.html in browser when done")
     opts.add_argument("--timeout", type=int, default=600, metavar="SEC", help="Per-auditor timeout in seconds (default: 600)")
     opts.add_argument("-v", "--verbose", action="store_true", help="Show auditor stdout/stderr in terminal")
+    opts.add_argument(
+        "--severity-threshold",
+        default="LOW",
+        choices=["CRITICAL", "HIGH", "MEDIUM", "LOW"],
+        metavar="LEVEL",
+        help="Hide findings below this level from the exec summary HTML "
+             "(CRITICAL | HIGH | MEDIUM | LOW). Default: LOW (show all). "
+             "Pillar scoring is not affected.",
+    )
 
     return parser.parse_args(argv)
 
@@ -622,7 +631,8 @@ def run_parallel(
 
 # ── Executive summary ─────────────────────────────────────────────────────────
 
-def run_exec_summary(client_dir: Path, client_name: str = "") -> Optional[Path]:
+def run_exec_summary(client_dir: Path, client_name: str = "",
+                     severity_threshold: str = "LOW") -> Optional[Path]:
     """Run exec_summary.py over the client output directory."""
     exec_script = REPO_ROOT / "tools" / "exec_summary.py"
     if not exec_script.exists():
@@ -637,6 +647,8 @@ def run_exec_summary(client_dir: Path, client_name: str = "") -> Optional[Path]:
     ]
     if client_name:
         cmd += ["--client-name", client_name]
+    if severity_threshold and severity_threshold != "LOW":
+        cmd += ["--severity-threshold", severity_threshold]
     console.print("\n[bold]Running executive summary…[/bold]")
     try:
         subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=120)
@@ -793,7 +805,8 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     html_path: Optional[Path] = None
     if results:
-        html_path = run_exec_summary(client_dir, client_name=args.client)
+        html_path = run_exec_summary(client_dir, client_name=args.client,
+                                      severity_threshold=args.severity_threshold)
         print_summary(results, html_path)
 
     if args.open and html_path and html_path.exists():

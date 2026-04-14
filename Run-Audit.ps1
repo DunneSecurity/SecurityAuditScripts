@@ -69,7 +69,10 @@ param(
 
     [switch]$SkipSummary,
 
-    [switch]$Open
+    [switch]$Open,
+
+    [ValidateSet('CRITICAL', 'HIGH', 'MEDIUM', 'LOW')]
+    [string]$SeverityThreshold = 'LOW'
 )
 
 # ── Banner ────────────────────────────────────────────────────────────────────
@@ -290,10 +293,17 @@ if (-not $SkipSummary) {
     if ($PythonCmd -and (Test-Path $ExecSummaryScript)) {
         Write-Host "  Generating executive summary..." -ForegroundColor Cyan
         $SummaryHtml = Join-Path $ClientDir 'exec_summary.html'
-        & $PythonCmd $ExecSummaryScript `
-            --input-dir  $ClientDir `
-            --output     $SummaryHtml `
-            --client-name $Client
+        $SummaryArgs = @(
+            $ExecSummaryScript,
+            '--input-dir',  $ClientDir,
+            '--output',     $SummaryHtml,
+            '--client-name', $Client
+        )
+        if ($SeverityThreshold -ne 'LOW') {
+            $SummaryArgs += '--severity-threshold'
+            $SummaryArgs += $SeverityThreshold
+        }
+        & $PythonCmd @SummaryArgs
 
         if ($LASTEXITCODE -eq 0 -and (Test-Path $SummaryHtml)) {
             Write-Host "  Summary : $SummaryHtml" -ForegroundColor Green

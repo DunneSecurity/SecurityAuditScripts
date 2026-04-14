@@ -476,5 +476,31 @@ def test_build_cmd_no_domain_for_regular_auditors():
     assert "--domain" not in cmd
 
 
+# ── --severity-threshold argument ─────────────────────────────────────────────
+
+def test_parse_args_severity_threshold_high():
+    """--severity-threshold HIGH is accepted and stored correctly."""
+    args = audit.parse_args(["--s3", "--severity-threshold", "HIGH"])
+    assert args.severity_threshold == "HIGH"
+
+
+def test_parse_args_severity_threshold_default_low():
+    """--severity-threshold defaults to LOW when not specified."""
+    args = audit.parse_args(["--s3"])
+    assert args.severity_threshold == "LOW"
+
+
+def test_parse_args_severity_threshold_critical():
+    """--severity-threshold CRITICAL is accepted."""
+    args = audit.parse_args(["--s3", "--severity-threshold", "CRITICAL"])
+    assert args.severity_threshold == "CRITICAL"
+
+
+def test_parse_args_severity_threshold_medium():
+    """--severity-threshold MEDIUM is accepted."""
+    args = audit.parse_args(["--s3", "--severity-threshold", "MEDIUM"])
+    assert args.severity_threshold == "MEDIUM"
+
+
 if __name__ == "__main__":
     unittest.main()

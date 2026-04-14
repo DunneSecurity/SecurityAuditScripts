@@ -14,6 +14,7 @@ Aggregates JSON report files from all AWS, Azure, and on-premises auditors into 
 - Top 5 critical/high findings sorted by severity, with resource identifier and remediation (configurable via `--top-n`)
 - CRITICAL callout section — up to 3 most severe findings highlighted above the findings table
 - Quick wins table — low-effort, high-impact actions from ℹ️-prefixed flags on HIGH/CRITICAL findings
+- **Severity threshold filter** — `--severity-threshold HIGH` hides MEDIUM/LOW findings from the report HTML without affecting the security score; accepts `CRITICAL | HIGH | MEDIUM | LOW` (default `LOW` = show all)
 - Output written to a single portable HTML file (mode 600, no external deps, print-ready via `@media print`)
 - Score calibrated for SMB environments: 13 CRITICAL pillars = score 0
 
@@ -37,6 +38,9 @@ python3 tools/exec_summary.py --input-dir /path/to/reports/
 
 # Custom output path
 python3 tools/exec_summary.py --input-dir . --output /tmp/my_summary.html
+
+# Show only HIGH and CRITICAL findings in the report (score unchanged)
+python3 tools/exec_summary.py --input-dir . --severity-threshold HIGH
 ```
 
 ---
@@ -121,7 +125,7 @@ Creates: auditor stub + `tests/` directory, inserts `AUDITOR_MAP` entry in `audi
 ## Running Tests
 
 ```bash
-# All 934 tests from repo root (pytest.ini handles --import-mode=importlib)
+# All tests from repo root (pytest.ini handles --import-mode=importlib)
 python3 -m pytest -q
 
 # exec_summary + scoring + schema only

@@ -561,3 +561,105 @@ def test_run_sidecar_contains_score_and_grade(tmp_path):
     assert "grade" in sidecar
     assert "pillar_stats" in sidecar
     assert len(sidecar["pillar_stats"]) == 2
+
+
+# ── severity_threshold filter ──────────────────────────────────────────────────
+
+# Mixed-severity fixture: CRITICAL + HIGH + MEDIUM + LOW findings across two pillars
+_MIXED_FIXTURE = {
+    "generated_at": "2026-01-01T00:00:00+00:00",
+    "findings": [
+        {"risk_level": "CRITICAL", "severity_score": 10, "name": "crit-resource",
+         "flags": ["❌ Critical issue"], "remediations": ["Fix critical"]},
+        {"risk_level": "HIGH", "severity_score": 7, "name": "high-resource",
+         "flags": ["⚠️ High issue"], "remediations": ["Fix high"]},
+        {"risk_level": "MEDIUM", "severity_score": 4, "name": "med-resource",
+         "flags": ["ℹ️ Medium issue"], "remediations": ["Fix medium"]},
+        {"risk_level": "LOW", "severity_score": 1, "name": "low-resource",
+         "flags": ["✅ Low issue"], "remediations": ["Fix low"]},
+    ],
+    "summary": {"total": 4, "critical": 1, "high": 1, "medium": 1, "low": 1},
+}
+
+# A second fixture with only MEDIUM findings — used to test quick-wins Source 2 suppression
+_MEDIUM_ONLY_FIXTURE = {
+    "generated_at": "2026-01-01T00:00:00+00:00",
+    "findings": [
+        {
+            "risk_level": "MEDIUM",
+            "status": "FAIL",
+            "name": "medium-qw-resource",
+            "remediation": "Fix this medium finding",
+            "detail": "Medium detail",
+        }
+    ],
+    "summary": {"total": 1, "critical": 0, "high": 0, "medium": 1, "low": 0},
+}
+
+
+def test_threshold_low_shows_all_findings(tmp_path):
+    """Default threshold LOW → all severities appear in HTML top findings."""
+    _write_fixture(tmp_path, "s3_report.json", _MIXED_FIXTURE)
+    out = str(tmp_path / "exec_summary.html")
+    es.run(input_dir=str(tmp_path), output_path=out, severity_threshold="LOW")
+    content = (tmp_path / "exec_summary.html").read_text()
+    assert "crit-resource" in content
+    assert "high-resource" in content
+    assert "med-resource" in content
+    assert "low-resource" in content
+
+
+def test_threshold_high_excludes_medium_low_from_top_findings(tmp_path):
+    """Threshold HIGH → MEDIUM and LOW findings absent from top findings table."""
+    _write_fixture(tmp_path, "s3_report.json", _MIXED_FIXTURE)
+    out = str(tmp_path / "exec_summary.html")
+    es.run(input_dir=str(tmp_path), output_path=out, severity_threshold="HIGH")
+    content = (tmp_path / "exec_summary.html").read_text()
+    assert "crit-resource" in content
+    assert "high-resource" in content
+    assert "med-resource" not in content
+    assert "low-resource" not in content
+
+
+def test_threshold_critical_excludes_high_medium_low_from_top_findings(tmp_path):
+    """Threshold CRITICAL → only CRITICAL findings appear in top findings table."""
+    _write_fixture(tmp_path, "s3_report.json", _MIXED_FIXTURE)
+    out = str(tmp_path / "exec_summary.html")
+    es.run(input_dir=str(tmp_path), output_path=out, severity_threshold="CRITICAL")
+    content = (tmp_path / "exec_summary.html").read_text()
+    assert "crit-resource" in content
+    assert "high-resource" not in content
+    assert "med-resource" not in content
+    assert "low-resource" not in content
+
+
+def test_threshold_does_not_affect_pillar_stats(tmp_path):
+    """Threshold HIGH → pillar stats counts unchanged (scoring unaffected)."""
+    _write_fixture(tmp_path, "s3_report.json", _MIXED_FIXTURE)
+    out_all = str(tmp_path / "exec_all.html")
+    out_high = str(tmp_path / "exec_high.html")
+    es.run(input_dir=str(tmp_path), output_path=out_all, severity_threshold="LOW")
+    es.run(input_dir=str(tmp_path), output_path=out_high, severity_threshold="HIGH")
+    sidecar_all = json.loads((tmp_path / "exec_all_data.json").read_text())
+    sidecar_high = json.loads((tmp_path / "exec_high_data.json").read_text())
+    # Scores must be identical — threshold is display-only
+    assert sidecar_all["score"] == sidecar_high["score"]
+    assert sidecar_all["grade"] == sidecar_high["grade"]
+
+
+def test_threshold_high_suppresses_medium_quick_wins(tmp_path):
+    """Threshold HIGH → MEDIUM-only quick wins (Source 2) not shown in quick wins section."""
+    _write_fixture(tmp_path, "ssl_report.json", _MEDIUM_ONLY_FIXTURE)
+    out = str(tmp_path / "exec_summary.html")
+    es.run(input_dir=str(tmp_path), output_path=out, severity_threshold="HIGH")
+    content = (tmp_path / "exec_summary.html").read_text()
+    assert "medium-qw-resource" not in content
+
+
+def test_threshold_medium_shows_medium_quick_wins(tmp_path):
+    """Threshold MEDIUM → MEDIUM findings still appear in quick wins section."""
+    _write_fixture(tmp_path, "ssl_report.json", _MEDIUM_ONLY_FIXTURE)
+    out = str(tmp_path / "exec_summary.html")
+    es.run(input_dir=str(tmp_path), output_path=out, severity_threshold="MEDIUM")
+    content = (tmp_path / "exec_summary.html").read_text()
+    assert "medium-qw-resource" in content

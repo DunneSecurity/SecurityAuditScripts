@@ -274,6 +274,22 @@ def discover_reports(directory):
 _SEVERITY_RANK = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
 
 
+def _findings_at_or_above(findings, threshold):
+    """Return findings whose risk_level is at or above the threshold severity.
+
+    Handles both ``risk_level`` and legacy ``severity`` field aliases.
+    Findings whose level is not in _SEVERITY_RANK (e.g. unknown) pass through.
+    """
+    cutoff = _SEVERITY_RANK.get(threshold, 3)
+    result = []
+    for f in findings:
+        level = (f.get("risk_level") or f.get("severity") or "LOW").upper()
+        rank = _SEVERITY_RANK.get(level)
+        if rank is None or rank <= cutoff:
+            result.append(f)
+    return result
+
+
 def compute_pillar_stats(pillar_name, report):
     """Compute risk counts and overall risk level for a single pillar report."""
     raw_findings = report.get("findings", [])
@@ -899,8 +915,14 @@ def warn_missing_azure_windows(input_dir):
 
 
 def run(input_dir=".", output_path="exec_summary.html", top_n=5, max_wins=10,
-        client_name="", assessor="", scope="", baseline_path=""):
-    """Discover reports, compute stats, write HTML summary."""
+        client_name="", assessor="", scope="", baseline_path="",
+        severity_threshold="LOW"):
+    """Discover reports, compute stats, write HTML summary.
+
+    severity_threshold: hide findings below this level from the HTML
+      (CRITICAL | HIGH | MEDIUM | LOW).  Default LOW = show all.
+      Pillar scoring is not affected — all findings still contribute to the score.
+    """
     report_paths = discover_reports(input_dir)
     if not report_paths:
         log.warning(f"No known report files found in {input_dir}")
@@ -941,8 +963,10 @@ def run(input_dir=".", output_path="exec_summary.html", top_n=5, max_wins=10,
 
     modules_scanned = len(pillar_stats_list)
     score, grade, grade_note = compute_overall_score(pillar_stats_list, modules_scanned=modules_scanned)
-    top_findings = get_top_findings(all_findings_flat, n=top_n)
-    quick_wins = get_quick_wins(all_findings_flat, max_wins=max_wins)
+    # Apply severity threshold: filter display findings only; scoring is already done above.
+    display_findings = _findings_at_or_above(all_findings_flat, severity_threshold)
+    top_findings = get_top_findings(display_findings, n=top_n)
+    quick_wins = get_quick_wins(display_findings, max_wins=max_wins)
     correlations = run_correlations(all_findings_flat)
 
     # Load baseline for diff section
@@ -1016,12 +1040,21 @@ def main():
     parser.add_argument("--baseline", default="",
                         metavar="FILE",
                         help="Path to a previous exec_summary_data.json for diff comparison")
+    parser.add_argument(
+        "--severity-threshold",
+        default="LOW",
+        choices=["CRITICAL", "HIGH", "MEDIUM", "LOW"],
+        metavar="LEVEL",
+        help="Hide findings below this level from the HTML report "
+             "(CRITICAL | HIGH | MEDIUM | LOW). Default: LOW (show all). "
+             "Pillar scoring is not affected.",
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     run(input_dir=args.input_dir, output_path=args.output,
         top_n=args.top_n, max_wins=args.max_wins,
         client_name=args.client_name, assessor=args.assessor, scope=args.scope,
-        baseline_path=args.baseline)
+        baseline_path=args.baseline, severity_threshold=args.severity_threshold)
 
 
 if __name__ == "__main__":
