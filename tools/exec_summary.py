@@ -22,6 +22,13 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
+# Cross-pillar correlation engine (graceful if unavailable)
+try:
+    from correlations import run_correlations
+except ImportError:
+    def run_correlations(findings):  # type: ignore[misc]
+        return []
+
 # Known report filename patterns (auto-discovered)
 KNOWN_PATTERNS = [
     "s3_report.json",
@@ -403,10 +410,19 @@ def get_quick_wins(all_findings, max_wins=10):
     return wins
 
 
+def _mitre_badge_html(finding: dict) -> str:
+    """Return a .mitre-badge span for a finding that has mitre_technique_id, else ''."""
+    tid = finding.get("mitre_technique_id", "")
+    if not tid:
+        return ""
+    tname = html_lib.escape(finding.get("mitre_technique_name", ""))
+    return f'<span class="mitre-badge">{html_lib.escape(tid)} · {tname}</span>'
+
+
 def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
                generated_at, path, client_name="", assessor="", scope="",
                grade_note="", modules_scanned=None, not_run_pillars=None,
-               baseline_data=None, warnings=None):
+               baseline_data=None, warnings=None, correlations=None):
     """Write executive summary HTML report to path with 0o600 permissions."""
     grade_colour = GRADE_COLOURS.get(grade, "#6c757d")
     is_capped = bool(grade_note)
@@ -480,12 +496,14 @@ def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
             flag_items.append(
                 f'<div class="flag-item"><span class="flag-text">{html_lib.escape(flag)}</span></div>'
             )
+        badge = _mitre_badge_html(f)
+        mitre_row_badge = f'<div style="margin-top:4px">{badge}</div>' if badge else ""
         finding_rows += (
             f'<tr data-risk="{risk}">'
             f'<td>{html_lib.escape(PILLAR_LABELS.get(f.get("pillar", ""), f.get("pillar", "").upper()))}</td>'
             f'<td><span style="background:{colour};color:#fff;padding:2px 8px;border-radius:4px;font-size:0.8em">{risk}</span></td>'
             f'<td><code>{html_lib.escape(str(resource))}</code></td>'
-            f'<td>{"".join(flag_items)}</td>'
+            f'<td>{"".join(flag_items)}{mitre_row_badge}</td>'
             f'</tr>\n'
         )
 
@@ -518,10 +536,11 @@ def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
                       else f.get("detail") or f.get("flag") or "")
             rem = (f.get("remediations", [""])[0] if f.get("remediations")
                    else f.get("remediation") or f.get("recommendation") or "")
+            mb = _mitre_badge_html(f)
             crit_items_html += (
                 f'<div class="crit-item">'
                 f'<div class="crit-meta"><span class="crit-badge">CRITICAL</span>'
-                f' <strong>{pillar_label}</strong></div>'
+                f' <strong>{pillar_label}</strong>{(" " + mb) if mb else ""}</div>'
                 f'<div class="crit-detail">{html_lib.escape(detail)}</div>'
                 + (f'<div class="crit-rem">\u21b3 {html_lib.escape(rem)}</div>' if rem else '')
                 + '</div>'
@@ -540,6 +559,40 @@ def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
                        'No high/critical findings — great work!</td></tr>') if not top_findings else ""
     no_quick_wins = ('<tr><td colspan="4" style="text-align:center;color:#888">'
                      'No quick wins identified.</td></tr>') if not quick_wins else ""
+
+    # Compound risk section
+    compound_risk_html = ""
+    if correlations:
+        compound_items_html = ""
+        for c in correlations:
+            sev = html_lib.escape(c["severity"])
+            sev_class = f"compound-badge-{c['severity']}"
+            name = html_lib.escape(c["name"])
+            tactic = html_lib.escape(c["mitre_tactic"])
+            technique = html_lib.escape(c["mitre_technique_id"])
+            narrative = html_lib.escape(c["narrative"])
+            contributors = html_lib.escape(", ".join(c["contributing_types"]))
+            item_class = f"compound-item compound-{c['severity']}"
+            compound_items_html += (
+                f'<div class="{item_class}">'
+                f'<div class="compound-meta">'
+                f'<span class="compound-badge {sev_class}">{sev}</span>'
+                f' <strong>{name}</strong>'
+                f' <span class="mitre-badge">{technique} · {tactic}</span>'
+                f'</div>'
+                f'<div class="compound-detail">{narrative}</div>'
+                f'<div class="compound-contributors">&#128279; Triggered by: {contributors}</div>'
+                f'</div>'
+            )
+        compound_risk_html = (
+            '<div class="section compound-risk-section">'
+            '<h2>&#128257; Compound Attack Paths</h2>'
+            '<p style="color:#666;font-size:0.9em;margin:0 0 16px">'
+            'These risks emerge from combinations of findings across multiple security domains. '
+            'They represent higher-impact attack paths than any individual finding alone.</p>'
+            f'<div class="compound-items">{compound_items_html}</div>'
+            '</div>'
+        )
 
     warnings_list = warnings or []
     if warnings_list:
@@ -682,10 +735,23 @@ def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
   .crit-callout h2 {{ color:#dc3545; border-color:#dc354533; }}
   .crit-items {{ display:flex; flex-direction:column; gap:12px; }}
   .crit-item {{ background:#fff5f5; border-left:4px solid #dc3545; border-radius:0 8px 8px 0; padding:14px 18px; }}
-  .crit-meta {{ margin-bottom:6px; display:flex; align-items:center; gap:10px; font-size:0.9em; }}
+  .crit-meta {{ margin-bottom:6px; display:flex; align-items:center; gap:10px; font-size:0.9em; flex-wrap:wrap; }}
   .crit-badge {{ background:#dc3545; color:#fff; padding:2px 8px; border-radius:4px; font-size:0.78em; font-weight:700; letter-spacing:0.5px; }}
   .crit-detail {{ font-size:0.88em; color:#333; margin-bottom:4px; }}
   .crit-rem {{ font-size:0.82em; color:#555; font-style:italic; }}
+  .mitre-badge {{ display:inline-block; background:#2c3e50; color:#a8d8ea; padding:2px 8px; border-radius:4px; font-size:0.72em; font-weight:600; letter-spacing:0.3px; font-family:monospace; white-space:nowrap; }}
+  .compound-risk-section {{ border-top:3px solid #6610f2; }}
+  .compound-risk-section h2 {{ color:#6610f2; border-color:#6610f233; }}
+  .compound-items {{ display:flex; flex-direction:column; gap:12px; }}
+  .compound-item {{ background:#f8f5ff; border-left:4px solid #6610f2; border-radius:0 8px 8px 0; padding:14px 18px; }}
+  .compound-item.compound-CRITICAL {{ background:#fff5f5; border-left-color:#dc3545; }}
+  .compound-item.compound-HIGH {{ background:#fff8f0; border-left-color:#fd7e14; }}
+  .compound-meta {{ margin-bottom:8px; display:flex; align-items:center; gap:10px; font-size:0.9em; flex-wrap:wrap; }}
+  .compound-badge {{ color:#fff; padding:2px 8px; border-radius:4px; font-size:0.78em; font-weight:700; letter-spacing:0.5px; }}
+  .compound-badge-CRITICAL {{ background:#dc3545; }}
+  .compound-badge-HIGH {{ background:#fd7e14; }}
+  .compound-detail {{ font-size:0.88em; color:#333; margin-bottom:6px; }}
+  .compound-contributors {{ font-size:0.78em; color:#666; font-style:italic; }}
   .filter-bar {{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }}
   .filter-btn {{ padding:4px 14px; border:1px solid #ccc; border-radius:16px; background:#fff;
                 cursor:pointer; font-size:0.82em; font-weight:600; transition:background 0.15s; }}
@@ -747,6 +813,8 @@ def write_html(overall_score, grade, pillar_stats, top_findings, quick_wins,
 </div>
 
 {crit_callout_html}
+
+{compound_risk_html}
 
 <div class="section">
   <h2>Top Critical &amp; High Findings</h2>
@@ -875,6 +943,7 @@ def run(input_dir=".", output_path="exec_summary.html", top_n=5, max_wins=10,
     score, grade, grade_note = compute_overall_score(pillar_stats_list, modules_scanned=modules_scanned)
     top_findings = get_top_findings(all_findings_flat, n=top_n)
     quick_wins = get_quick_wins(all_findings_flat, max_wins=max_wins)
+    correlations = run_correlations(all_findings_flat)
 
     # Load baseline for diff section
     baseline_data = None
@@ -906,6 +975,7 @@ def run(input_dir=".", output_path="exec_summary.html", top_n=5, max_wins=10,
         pillar_stats=pillar_stats_list,
         top_findings=top_findings,
         quick_wins=quick_wins,
+        correlations=correlations,
         generated_at=datetime.now(timezone.utc).isoformat(),
         path=output_path,
         client_name=client_name,

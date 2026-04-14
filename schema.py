@@ -20,8 +20,19 @@ Legacy aliases accepted by validate_finding()
 """
 
 from __future__ import annotations
+import os as _os
+import sys as _sys
 
 VALID_RISK_LEVELS = {"CRITICAL", "HIGH", "MEDIUM", "LOW"}
+
+# Lazy-load MITRE map from tools/mitre_map.py; graceful fallback to empty dict
+try:
+    _tools_dir = _os.path.join(_os.path.dirname(__file__), "tools")
+    if _tools_dir not in _sys.path:
+        _sys.path.insert(0, _tools_dir)
+    from mitre_map import MITRE_MAP as _MITRE_MAP
+except (ImportError, ModuleNotFoundError):
+    _MITRE_MAP = {}
 
 
 def validate_finding(finding: dict) -> dict:
@@ -55,5 +66,13 @@ def validate_finding(finding: dict) -> dict:
     # flag ← detail (informational summary line)
     if "flag" not in finding:
         finding["flag"] = finding.get("detail", "")
+
+    # MITRE ATT&CK enrichment — adds tactic/technique fields when finding_type is mapped
+    ft = finding.get("finding_type") or finding.get("FindingType", "")
+    if ft and ft in _MITRE_MAP:
+        entry = _MITRE_MAP[ft]
+        finding.setdefault("mitre_tactic", entry["tactic"])
+        finding.setdefault("mitre_technique_id", entry["technique_id"])
+        finding.setdefault("mitre_technique_name", entry["technique_name"])
 
     return finding
