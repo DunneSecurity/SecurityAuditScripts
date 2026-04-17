@@ -440,12 +440,13 @@ def test_run_returns_report_shape(tmp_path):
     assert report['pillar'] == 'ssh'
 
 
-def test_run_sshd_unavailable_scores_low(tmp_path):
-    """When sshd -T fails, all checks are N/A; overall risk should be LOW."""
+def test_run_sshd_unavailable_scores_unknown(tmp_path):
+    """When sshd installed but sshd -T fails, all checks N/A (>50%); risk is UNKNOWN."""
     with patch.object(lsa, 'run_command', return_value=('', 1)):
-        with patch('os.chmod'):
-            report = lsa.run(output_prefix=str(tmp_path / 'ssh_report'), fmt='json')
-    assert report['summary']['overall_risk'] == 'LOW'
+        with patch.object(lsa.shutil, 'which', return_value='/usr/sbin/sshd'):
+            with patch('os.chmod'):
+                report = lsa.run(output_prefix=str(tmp_path / 'ssh_report'), fmt='json')
+    assert report['summary']['overall_risk'] == 'UNKNOWN'
     assert report['summary']['non_compliant'] == 0
 
 
